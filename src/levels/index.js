@@ -2,6 +2,7 @@ import { ANGKOR } from './angkor.js';
 import { BAVARIA } from './bavaria.js';
 import { TIBET } from './tibet.js';
 import { INDIA } from './india.js';
+import { VAULT_LEVELS } from './vault.js';
 import { parseLevel } from '../engine/level.js';
 
 export const WORLDS = [
@@ -37,7 +38,14 @@ export const WORLDS = [
     levels: INDIA,
     playable: true,
   },
-  { id: 'vault', name: 'The Obsidian Vault', place: 'Finale', mood: 'Every tool, every world.', levels: [], playable: false },
+  {
+    id: 'vault',
+    name: 'The Obsidian Vault',
+    place: 'Beneath all four temples',
+    mood: 'Black glass, red lasers and every tool you own.',
+    levels: VAULT_LEVELS,
+    playable: true,
+  },
 ];
 
 export const LEVELS = WORLDS.flatMap((w) => w.levels.map((l) => ({ ...l, world: w.id })));

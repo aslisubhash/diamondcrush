@@ -160,6 +160,16 @@ function bossCanEnter(s, x, y) {
   return !s.obj[i] && !enemyAt(s, x, y) && !(s.partner && s.partner.x === x && s.partner.y === y);
 }
 
+export function bossKnock(s, dir) {
+  const b = s.boss;
+  const [dx, dy] = DIRS[dir];
+  if (bossCanEnter(s, b.x + dx, b.y + dy) && !bodyAt(s, b.x + dx, b.y + dy)) {
+    b.x += dx;
+    b.y += dy;
+    emit(s, 'knock', b.x, b.y, { dir });
+  }
+}
+
 function bossStep(s, b, dir, name) {
   const [dx, dy] = DIRS[dir];
   const nx = b.x + dx;
@@ -344,6 +354,8 @@ function hand(s, b) {
   if (s.tick % 3 === 0) return;
   const d = pathStep(s, { x: b.x, y: b.y, t: 'hand' }, h.x, h.y);
   if (d) bossStep(s, b, d, name);
+  // Walled off from the hero: stalk the hero's row instead.
+  else if (h.y !== b.y) bossStep(s, b, h.y < b.y ? 'U' : 'D', name);
 }
 
 export { heroAt };

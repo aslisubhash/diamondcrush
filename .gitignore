@@ -2,3 +2,7 @@ node_modules/
 .DS_Store
 *.log
 /tmp/
+# Android build: downloaded tools, intermediates and the private signing key.
+android/.cache/
+android/build/
+android/keystore/

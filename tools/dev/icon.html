@@ -1,0 +1,65 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Launcher icon</title>
+<style>body{margin:0;background:transparent}canvas{display:block}</style></head>
+<body><canvas id="c" width="512" height="512"></canvas>
+<script type="module">
+// Renders the app launcher icon with the game's own treasure art: a gold
+// ringed medallion of midnight velvet holding the brilliant sapphire.
+import { drawGemHQ } from '../../src/render/premium.js';
+const c = document.getElementById('c');
+const x = c.getContext('2d');
+const n = c.width;
+const cx = n / 2;
+// Velvet medallion.
+const bg = x.createRadialGradient(cx, n * 0.38, n * 0.05, cx, cx, n * 0.5);
+bg.addColorStop(0, '#4a2a70');
+bg.addColorStop(0.6, '#1f1230');
+bg.addColorStop(1, '#0d0816');
+x.fillStyle = bg;
+x.beginPath();
+x.arc(cx, cx, n * 0.48, 0, Math.PI * 2);
+x.fill();
+// Light rays.
+x.save();
+x.translate(cx, cx);
+for (let i = 0; i < 16; i++) {
+  x.rotate(Math.PI / 8);
+  const g = x.createLinearGradient(0, 0, n * 0.46, 0);
+  g.addColorStop(0, 'rgba(255,220,140,0.28)');
+  g.addColorStop(1, 'rgba(255,220,140,0)');
+  x.fillStyle = g;
+  x.beginPath();
+  x.moveTo(0, 0);
+  x.lineTo(n * 0.46, -n * 0.03);
+  x.lineTo(n * 0.46, n * 0.03);
+  x.fill();
+}
+x.restore();
+// Gold rings.
+const gold = x.createLinearGradient(0, 0, n, n);
+gold.addColorStop(0, '#fff4c8');
+gold.addColorStop(0.3, '#f0cd6a');
+gold.addColorStop(0.6, '#b9861e');
+gold.addColorStop(0.85, '#7a4e0c');
+gold.addColorStop(1, '#e8c15c');
+x.strokeStyle = '#2b1a04';
+x.lineWidth = n * 0.05;
+x.beginPath();
+x.arc(cx, cx, n * 0.455, 0, Math.PI * 2);
+x.stroke();
+x.strokeStyle = gold;
+x.lineWidth = n * 0.035;
+x.stroke();
+x.strokeStyle = 'rgba(233,194,90,0.5)';
+x.lineWidth = n * 0.008;
+x.beginPath();
+x.arc(cx, cx, n * 0.41, 0, Math.PI * 2);
+x.stroke();
+// The sapphire.
+const s = n * 0.7;
+x.save();
+x.translate((n - s) / 2, (n - s) / 2 + n * 0.01);
+drawGemHQ(x, s, 'blue', 0.35);
+x.restore();
+window.iconReady = true;
+</script></body></html>

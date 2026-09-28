@@ -952,9 +952,30 @@ applySettings();
 initTitle();
 requestAnimationFrame(loop);
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') {
+// The Android app ships every file inside the APK, so it needs no service worker.
+const inApp = navigator.userAgent.includes('DiamondCrushApp');
+if ('serviceWorker' in navigator && location.protocol === 'https:' && !inApp) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
+// Android back button: close menus, pause the game, step back to the map.
+// Returns false on the title and map screens so the app can close.
+window.__dcBack = () => {
+  if (modalOpen) {
+    if (session && session.over) return true;
+    closeModal();
+    return true;
+  }
+  if (screen === 'game' && session) {
+    openPause();
+    return true;
+  }
+  if (screen === 'comic') {
+    showMap();
+    return true;
+  }
+  return false;
+};
 
 // Handy for debugging and automated smoke tests.
 window.__dc = { get session() { return session; }, startStage, profile };

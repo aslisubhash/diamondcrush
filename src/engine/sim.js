@@ -12,7 +12,7 @@ import {
   heroCanEnter, objectCanEnter, hurt, killEnemy, returnStolen,
 } from './shared.js';
 import { enemiesAct, crushable } from './enemies.js';
-import { makeBoss, bossAct, bossDamage, bossRefill, lairImpact, gearJams } from './bosses.js';
+import { makeBoss, bossAct, bossDamage, bossRefill, lairImpact, gearJams, bossKnock } from './bosses.js';
 
 export { enemyAt, exitOpen, gateOpen, wellWet, hurt, effFloor };
 
@@ -621,6 +621,7 @@ function traceBeams(s) {
   }
   const b = s.boss;
   let bossLit = false;
+  let litDir = null;
   for (const [k, m] of Object.entries(s.meta)) {
     const i0 = +k;
     if (s.floor[i0] !== 'lamp') continue;
@@ -645,7 +646,10 @@ function traceBeams(s) {
       }
       if (b && b.alive && b.t !== 'naga' && b.x === x && b.y === y) {
         add(i, dir);
-        if (b.t === 'frost' || m.laser) bossLit = true;
+        if (b.t === 'frost' || m.laser) {
+          bossLit = true;
+          litDir = dir;
+        }
         break;
       }
       const o = s.obj[i];
@@ -678,6 +682,8 @@ function traceBeams(s) {
     if (bossLit && !b.beamLock) {
       b.beamLock = true;
       bossDamage(s, 'light');
+      // A laser blast throws the Hand out of the beam, toward the middle row.
+      if (b.alive && b.t === 'hand' && litDir) bossKnock(s, b.y < s.h / 2 ? 'D' : 'U');
     } else if (!bossLit) b.beamLock = false;
   }
 }
