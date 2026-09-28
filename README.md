@@ -2,7 +2,7 @@
 
 A top-down, grid-based treasure-hunting puzzle adventure for HTML5 Canvas, built from the *Diamond Crush: The Lost Expeditions* game design document. You dig through earth, push boulders, dodge falling rocks, crush snakes and collect every gem, with rewinds, clues and a portrait-first control deck.
 
-This build is a playable vertical slice: the full rules engine plus **World 1, the Angkor Jungle Temples**, complete with 10 stages, 2 secret stages and the Naga Warden boss.
+This build is the full campaign: **five worlds, 63 stages** (10 main stages, 2 secret stages and a guardian per world, and a 10-stage finale with the Obsidian Hand), all with verified solutions, plus an installable **Android APK**.
 
 ## Run it
 
@@ -20,14 +20,15 @@ Opening `index.html` straight from disk won't work, because browsers block ES mo
 | Action | Touch | Keyboard | Gamepad | Classic keypad |
 | --- | --- | --- | --- | --- |
 | Move (hold to walk) | D-pad, joystick or swipe | Arrows / WASD | D-pad / left stick | 2 4 6 8 |
-| Use tool | A button | Space | A | 5 |
-| Cycle tool | ⇄ Tool | Q / E | LB / RB | * / # |
-| Rewind one step | B button | Z / Backspace | B | 0 |
-| Rock-fall preview (hold) | Map | M / Tab | Y | 1 |
-| Lantern clue | 🏮 | L | | 7 |
-| Pause | ❚❚ | Esc / P | Start | 3 |
+| Use tool | Tool button, or tap (no-buttons mode) | Space | A | 5 |
+| Cycle tool | Tool | Q / E | LB / RB | * / # |
+| Rewind one step | Rewind button, or two-finger tap | Z / Backspace | B | 0 |
+| Swap explorers | Swap | X / C | X | 9 |
+| Rock-fall preview (hold) | Map, or press and hold | M / Tab | Y | 1 |
+| Lantern clue | Lantern icon | L | | 7 |
+| Pause | Pause icon | Esc / P | Start | 3 |
 
-Settings can switch the deck between D-pad, floating joystick, a retro phone keypad, or swipe-only. They also cover left-handed mirroring, button size and opacity, and the game/deck split (you can drag the divider too). There are toggles for the Retro filter (24 px art with LCD lines), reduced motion, haptics, volumes and the four difficulty modes. On landscape phones the deck moves to the sides.
+On-screen buttons are optional: the first launch asks whether you want the control deck, gestures only, or keyboard/gamepad, and the pause menu can hide or show the buttons at any time. Settings can switch the deck between D-pad, floating joystick, a retro phone keypad, or no buttons. They also cover left-handed mirroring, button size and opacity, and the game/deck split (you can drag the divider too). There are toggles for the Retro filter (24 px art with LCD lines), reduced motion, haptics, volumes and the four difficulty modes. On landscape phones the deck moves to the sides.
 
 ## What's in this build
 
@@ -41,7 +42,18 @@ Settings can switch the deck between D-pad, floating joystick, a retro phone key
 - Boss: the Naga Warden fights in three phases. It telegraphs head strikes and tail sweeps, refills its boulders between phases and restores your hearts at each phase change.
 - Difficulties: Explorer, Classic, Relic Hunter and Purist. Purist unlocks after the boss.
 
-**World 1: Angkor.** It has Root Gate, Falling Stones, Hall of Faces (hammer), Serpent Steps, Monkey Business, Scarab Crossing, The Rolling Court, Spike Garden, Keys of the Apsara and Heart of the Jungle. There are secret exits in stages 4 and 8 leading to Vine Vault (plates and gates) and Moonlit Shrine (a dark room lit only by your torch), plus the Naga Warden. Each level has in-world tips, a red gem behind a secret or puzzle, a par move count and a verified solution.
+**The five worlds** (`src/levels/`)
+- **Angkor Jungle Temples**: digging, gravity, the hammer, snakes, scarabs, monkeys, rolling stones, spikes, keys; the Naga Warden (reward: grapple).
+- **Falkenstein Keep**: torch and braziers, levers and drawbridges, fire jets, blades, bats, knights, rats, conveyors, the echo; the Iron Baron (reward: frost charm).
+- **Monastery of Nine Winds**: ice sliding, wind terraces, steam vents, ice spirits, yetis, the power gauntlet, light beams and sun sensors; Frostfang (reward: sun mirror).
+- **Bharat Expedition**: clay-pot bazaar, stepwells, the Nandi bell, collapsing desert fort, langurs, monsoon currents, cave carving, the rotating sun lamp, the chakra disc, Kai and Meera tag team, kolam tracing, a tiger stalk; Rakta Yantra.
+- **The Obsidian Vault**: ten remix stages (lethal lasers, echoes, freight belts, a timed collapse, the Heart Stone lattice) and the Obsidian Hand, who mirrors your every step.
+
+Every stage has in-world tips, a par move count and a solution the test suite replays (no damage, quota met, exit reached); most hide a red gem and some a secret exit.
+
+**Physics notes.** Rocks cannot be pushed upward; a falling rock is fatal on Classic and harder (two hearts on Explorer). A rock resting on your head is still safe.
+
+**Look and feel.** A royal theme with gold-leaf SVG icons (no emoji), self-hosted Cinzel, Cinzel Decorative and Cormorant Garamond, and high-detail treasure art (`src/render/premium.js`): gold-mounted brilliant-cut sapphires, a heart-cut ruby, mossy cracked boulders, gilded crates, chibi explorers with ink outlines, and a stone-ring vortex exit. Art is painted in code once per tile size and cached.
 
 **Around the game**
 - Title screen, a skippable 4-panel story comic, and a hub map with star and crown tracking. The boss sits behind a blue-gem star gate.
@@ -52,11 +64,23 @@ Settings can switch the deck between D-pad, floating joystick, a retro phone key
 - Audio (`src/audio/`): all synthesised with Web Audio. There are Classic-layer effects from the GDD 8.5 recipes and the pentatonic gem combo ladder from 8.6. The original looping music has base, danger and discovery stems, plus a counter-melody when the exit opens and a heartbeat on your last heart. There are victory and game-over jingles, music ducking, and an 8-voice cap with priorities.
 - Progress saves in `localStorage` and survives private mode by falling back to memory. A web manifest and service worker allow install and offline play.
 
+## Android APK
+
+`dist/DiamondCrush.apk` is a ready-to-install build (Android 7.0+). It is a full-screen WebView that serves the game from inside the APK, so it plays fully offline; the back button pauses the game or closes menus.
+
+Rebuild it with:
+
+```sh
+node tools/android-icons.mjs   # optional: re-render launcher icons (needs npm start running)
+python3 android/build_apk.py   # → dist/DiamondCrush.apk
+```
+
+The build needs only Java and Python: it fetches dx, apksig and the Android framework jar from Maven Central, compiles and dexes `android/src`, encodes the binary manifest and resource table itself, aligns the zip and signs it (APK signature scheme v2). The signing key is created on first run at `android/keystore/release.p12` (git-ignored). Keep it: Android only installs updates signed with the same key. Use your own key with `DC_KEYSTORE`, `DC_KEYSTORE_PASS` and `DC_KEY_ALIAS`. For the Play Store, upload an Android App Bundle built with the standard Android toolchain, or enrol this key in Play App Signing.
+
 **Not in this build** (these are later phases of the GDD roadmap):
-- Worlds 2 to 5, which appear on the map as locked tabs, and their mechanics: ice, conveyors, light beams, water levels, and Meera tag-team play.
 - The level editor, Daily Relic Puzzle, weekly expeditions, leaderboards, ghost races and echo stones.
 - Relic museum, season pass, in-app purchases and ads, localisation and the India edition.
-- The native Android wrapper and Play Store integration.
+- Play Store integration (billing, achievements, cloud save).
 - Tap-to-path and soft-lock detection. The pause menu's restart and the rewind cover these for now.
 
 ## Project layout
