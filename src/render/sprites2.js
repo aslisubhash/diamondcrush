@@ -475,50 +475,91 @@ export function drawToolSprite(ctx, s, tool) {
 // ---------- Meera Rao ----------
 
 export function drawMeera(ctx, s, dir, frame, opts = {}) {
-  const bob = frame ? s * 0.03 : 0;
+  // Meera Rao, chibi style: teal kurta, marigold dupatta, long braid.
   const side = dir === 'L' ? -1 : dir === 'R' ? 1 : 0;
-  shadow(ctx, s, 0.26);
-  ctx.fillStyle = '#3b2412';
-  const step = frame ? s * 0.05 : 0;
-  ctx.fillRect(s * 0.35, s * 0.76 - step, s * 0.11, s * 0.12);
-  ctx.fillRect(s * 0.54, s * 0.76, s * 0.11, s * 0.12);
-  ctx.fillStyle = COLORS.meeraTop;
-  rr(ctx, s * 0.29, s * 0.44 - bob, s * 0.42, s * 0.38, s * 0.1);
-  ctx.fill();
-  ctx.fillStyle = COLORS.meeraTopDark;
-  ctx.fillRect(s * 0.29, s * 0.7 - bob, s * 0.42, s * 0.05);
-  // Dupatta scarf across the shoulder.
-  ctx.fillStyle = COLORS.meeraScarf;
-  ctx.save();
-  ctx.translate(s * 0.5, s * 0.55 - bob);
-  ctx.rotate(-0.7);
-  ctx.fillRect(-s * 0.05, -s * 0.2, s * 0.1, s * 0.4);
-  ctx.restore();
-  // Braid.
-  if (dir !== 'D') {
-    ctx.fillStyle = COLORS.meeraHair;
-    ctx.fillRect(s * 0.5 - side * s * 0.12 - s * 0.04, s * 0.36 - bob, s * 0.08, s * 0.3);
+  const back = dir === 'U';
+  const bob = frame ? s * 0.02 : 0;
+  const lin = (y0, y1, a, b) => {
+    const g = ctx.createLinearGradient(0, y0 * s, 0, y1 * s);
+    g.addColorStop(0, a);
+    g.addColorStop(1, b);
+    return g;
+  };
+  shadow(ctx, s, 0.24);
+  const step = frame ? s * 0.035 : 0;
+  for (const [lx, dy] of [[0.41, -step], [0.59, step]]) {
+    ctx.fillStyle = '#e8dcc0';
+    rr(ctx, s * (lx - 0.055), s * 0.72 + dy, s * 0.11, s * 0.12, s * 0.03);
+    ctx.fill();
+    ctx.fillStyle = lin(0.8, 0.92, '#8a3a1a', '#4a1a08');
+    rr(ctx, s * (lx - 0.07 + side * 0.02), s * 0.81 + dy, s * 0.14, s * 0.09, s * 0.04);
+    ctx.fill();
   }
-  ctx.fillStyle = COLORS.meeraSkin;
-  circle(ctx, s * 0.5 + side * s * 0.03, s * 0.33 - bob, s * 0.15);
+  for (const ax of [0.27, 0.73]) {
+    ctx.fillStyle = lin(0.52, 0.72, '#2fb0a9', '#146a64');
+    rr(ctx, s * (ax - 0.05), s * 0.54 - bob, s * 0.1, s * 0.16, s * 0.05);
+    ctx.fill();
+    ctx.fillStyle = COLORS.meeraSkin;
+    circle(ctx, s * ax, s * 0.72 - bob, s * 0.043);
+    ctx.fillStyle = '#f1c34a';
+    ctx.fillRect(s * (ax - 0.04), s * 0.68 - bob, s * 0.08, s * 0.018);
+  }
+  ctx.fillStyle = lin(0.5, 0.8, '#2fb0a9', '#11605a');
+  rr(ctx, s * 0.31, s * 0.5 - bob, s * 0.38, s * 0.3, s * 0.08);
+  ctx.fill();
+  ctx.fillStyle = '#f1c34a';
+  ctx.fillRect(s * 0.31, s * 0.76 - bob, s * 0.38, s * 0.022);
+  // Dupatta across the shoulder.
+  ctx.fillStyle = lin(0.45, 0.8, '#ffc04a', '#e07a10');
+  ctx.save();
+  ctx.translate(s * 0.5, s * 0.6 - bob);
+  ctx.rotate(back ? 0.7 : -0.7);
+  rr(ctx, -s * 0.05, -s * 0.2, s * 0.1, s * 0.4, s * 0.03);
+  ctx.fill();
+  ctx.restore();
+  const hx = s * (0.5 + side * 0.02);
+  const hy = s * 0.36 - bob;
+  const hr = s * 0.19;
+  // Braid.
+  if (!(dir === 'D')) {
+    ctx.fillStyle = COLORS.meeraHair;
+    for (let k = 0; k < 4; k++) circle(ctx, hx - side * s * 0.13, hy + s * (0.1 + k * 0.08), s * 0.04);
+    ctx.fillStyle = '#f29a1f';
+    circle(ctx, hx - side * s * 0.13, hy + s * 0.42, s * 0.025);
+  }
+  const skin = ctx.createRadialGradient(hx - hr * 0.3, hy - hr * 0.3, 0, hx, hy, hr);
+  skin.addColorStop(0, '#f0c093');
+  skin.addColorStop(0.7, '#c98b5e');
+  skin.addColorStop(1, '#a86b40');
+  ctx.fillStyle = back ? COLORS.meeraHair : skin;
+  circle(ctx, hx, hy, hr);
   ctx.fillStyle = COLORS.meeraHair;
   ctx.beginPath();
-  ctx.arc(s * 0.5 + side * s * 0.03, s * 0.3 - bob, s * 0.155, Math.PI, 0);
+  ctx.arc(hx, hy - hr * 0.05, hr * 1.04, Math.PI * 1.02, Math.PI * 1.98);
   ctx.fill();
-  if (dir !== 'U') {
-    ctx.fillStyle = '#1a0f0a';
-    if (side === 0) {
-      ctx.fillRect(s * 0.43, s * 0.35 - bob, s * 0.04, s * 0.04);
-      ctx.fillRect(s * 0.53, s * 0.35 - bob, s * 0.04, s * 0.04);
-      ctx.fillStyle = '#d23b3b';
-      circle(ctx, s * 0.5, s * 0.27 - bob, s * 0.02);
-    } else {
-      ctx.fillRect(s * 0.5 + side * s * 0.1 - s * 0.02, s * 0.35 - bob, s * 0.04, s * 0.04);
+  if (!back) {
+    const eyes = side === 0 ? [-0.075, 0.075] : [side * 0.1];
+    for (const ex of eyes) {
+      const x = hx + s * ex;
+      const y = hy + s * 0.035;
+      ctx.fillStyle = '#1a0f0a';
+      ctx.beginPath();
+      ctx.ellipse(x, y, s * 0.024, s * 0.034, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff';
+      circle(ctx, x - s * 0.008, y - s * 0.012, s * 0.009);
     }
-  } else {
-    ctx.fillStyle = COLORS.meeraHair;
-    circle(ctx, s * 0.5, s * 0.33 - bob, s * 0.15);
+    if (side === 0) {
+      ctx.fillStyle = '#d23b3b';
+      circle(ctx, hx, hy - s * 0.04, s * 0.018);
+    }
+    ctx.fillStyle = 'rgba(240,110,100,0.3)';
+    circle(ctx, hx - s * 0.1, hy + s * 0.09, s * 0.028);
+    circle(ctx, hx + s * 0.1, hy + s * 0.09, s * 0.028);
   }
+  // Gold hair pin.
+  ctx.fillStyle = '#f1c34a';
+  circle(ctx, hx + (side || 1) * s * 0.12, hy - s * 0.12, s * 0.03);
   if (opts.hurt) {
     ctx.fillStyle = 'rgba(255,60,60,0.45)';
     circle(ctx, s * 0.5, s * 0.5, s * 0.42);

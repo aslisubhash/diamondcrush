@@ -86,6 +86,7 @@ function shadow(ctx, s, w, y = 0.9, a = 0.35) {
 
 // Sapphire ramp: ink navy -> royal blue -> ice white.
 const SAPPHIRE = ['#06163f', '#0b2f86', '#1557d6', '#2f8cff', '#7cc8ff', '#e6f7ff'];
+const VIVID_BLUE = ['#031456', '#0a3dcc', '#1c7cff', '#48bcff', '#aef0ff', '#ffffff'];
 const RUBY = ['#2a0209', '#6d0418', '#b3072b', '#e8203f', '#ff6d7f', '#ffe0e4'];
 const EMERALD = ['#021f14', '#05502f', '#0b8a4d', '#1fc06f', '#7ff0b1', '#e6fff1'];
 const GOLD = ['#3d2a06', '#7a5410', '#b9861e', '#e8bd48', '#fbe39a', '#fffaf0'];
@@ -201,6 +202,136 @@ function paintBrilliant(ctx, s, colors) {
   ctx.stroke();
 }
 
+// Gold leaf fill across a box, lit from the top-left.
+function goldFill(ctx, x0, y0, x1, y1) {
+  const g = ctx.createLinearGradient(x0, y0, x1, y1);
+  g.addColorStop(0, '#fffbe6');
+  g.addColorStop(0.25, '#ffd96a');
+  g.addColorStop(0.55, '#e0a526');
+  g.addColorStop(0.8, '#9a6208');
+  g.addColorStop(1, '#f0c24a');
+  return g;
+}
+
+// A faceted gold claw cap (a small pyramid) centred on a gem's point.
+function goldCap(ctx, s, x, y, r, rot = 0) {
+  ctx.save();
+  ctx.translate(x * s, y * s);
+  ctx.rotate(rot);
+  const R = r * s;
+  const pts = [[0, -R * 1.25], [R * 0.8, 0], [0, R * 0.9], [-R * 0.8, 0]];
+  ctx.beginPath();
+  pts.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+  ctx.closePath();
+  ctx.fillStyle = goldFill(ctx, -R, -R, R, R);
+  ctx.fill();
+  ctx.strokeStyle = '#5a3500';
+  ctx.lineWidth = Math.max(0.8, s * 0.012);
+  ctx.stroke();
+  // Facet split: lit left half, shaded right half.
+  ctx.beginPath();
+  ctx.moveTo(0, -R * 1.25);
+  ctx.lineTo(0, R * 0.9);
+  ctx.lineTo(R * 0.8, 0);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(120,70,0,0.35)';
+  ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,240,0.85)';
+  ctx.beginPath();
+  ctx.ellipse(-R * 0.25, -R * 0.35, R * 0.18, R * 0.32, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// A gold-mounted brilliant in the "diamond" silhouette: vivid facets
+// radiating from a four-part table, a thin gold rim and gold claw caps on
+// its four points, over a soft halo of its own light.
+function paintMounted(ctx, s, colors, glow) {
+  shadow(ctx, s, 0.3, 0.93, 0.45);
+  const halo = ctx.createRadialGradient(s * 0.5, s * 0.48, 0, s * 0.5, s * 0.48, s * 0.5);
+  halo.addColorStop(0, `rgba(${glow},0.45)`);
+  halo.addColorStop(1, `rgba(${glow},0)`);
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, s, s);
+  const T = [0.5, 0.1];
+  const L = [0.11, 0.47];
+  const R = [0.89, 0.47];
+  const B = [0.5, 0.91];
+  const t = [0.5, 0.27];
+  const l = [0.31, 0.46];
+  const r = [0.69, 0.46];
+  const b = [0.5, 0.68];
+  const c = [0.47, 0.44];
+  const outline = [T, R, B, L];
+  path(ctx, outline, s);
+  ctx.fillStyle = colors[1];
+  ctx.fill();
+  const facet = (pts, t0, t1) => {
+    path(ctx, pts, s);
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    const g = ctx.createLinearGradient(Math.min(...xs) * s, Math.min(...ys) * s, Math.max(...xs) * s, Math.max(...ys) * s);
+    g.addColorStop(0, ramp(colors, t0));
+    g.addColorStop(1, ramp(colors, t1));
+    ctx.fillStyle = g;
+    ctx.fill();
+  };
+  // Outer ring (8 facets), lit from the top-left.
+  facet([T, L, l], 0.9, 0.62);
+  facet([T, l, t], 0.99, 0.78);
+  facet([T, t, r], 0.72, 0.6);
+  facet([T, r, R], 0.62, 0.42);
+  facet([L, B, b], 0.5, 0.2);
+  facet([L, b, l], 0.66, 0.4);
+  facet([R, r, b], 0.44, 0.22);
+  facet([R, b, B], 0.3, 0.06);
+  // Table.
+  facet([t, l, c], 1, 0.84);
+  facet([l, b, c], 0.7, 0.55);
+  facet([b, r, c], 0.5, 0.36);
+  facet([r, t, c], 0.82, 0.62);
+  // Crisp facet edges.
+  ctx.lineWidth = Math.max(0.6, s * 0.009);
+  ctx.lineJoin = 'round';
+  const edges = [[T, l], [T, t], [T, r], [L, l], [L, b], [R, r], [R, b], [B, b], [t, l], [l, b], [b, r], [r, t], [t, c], [l, c], [b, c], [r, c]];
+  edges.forEach(([a, e], i) => {
+    ctx.strokeStyle = `rgba(255,255,255,${i < 4 || (i >= 8 && i < 10) ? 0.55 : 0.25})`;
+    ctx.beginPath();
+    ctx.moveTo(a[0] * s, a[1] * s);
+    ctx.lineTo(e[0] * s, e[1] * s);
+    ctx.stroke();
+  });
+  // Inner light and sheen.
+  ctx.save();
+  path(ctx, outline, s);
+  ctx.clip();
+  ctx.globalCompositeOperation = 'lighter';
+  const fire = ctx.createRadialGradient(s * 0.42, s * 0.38, 0, s * 0.42, s * 0.38, s * 0.28);
+  fire.addColorStop(0, `rgba(${glow},0.55)`);
+  fire.addColorStop(1, `rgba(${glow},0)`);
+  ctx.fillStyle = fire;
+  ctx.fillRect(0, 0, s, s);
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  path(ctx, [[0.44, 0.17], [0.34, 0.3], [0.27, 0.4], [0.33, 0.39], [0.43, 0.28]], s);
+  ctx.fill();
+  ctx.restore();
+  // Gold rim.
+  path(ctx, outline, s);
+  ctx.strokeStyle = '#4a2c00';
+  ctx.lineWidth = Math.max(1.2, s * 0.04);
+  ctx.stroke();
+  path(ctx, outline, s);
+  ctx.strokeStyle = goldFill(ctx, 0, 0, s, s);
+  ctx.lineWidth = Math.max(0.8, s * 0.024);
+  ctx.stroke();
+  // Claw caps on the four points.
+  goldCap(ctx, s, T[0], T[1] + 0.03, 0.085);
+  goldCap(ctx, s, B[0], B[1] - 0.02, 0.085, Math.PI);
+  goldCap(ctx, s, L[0] + 0.02, L[1], 0.072, -Math.PI / 2);
+  goldCap(ctx, s, R[0] - 0.02, R[1], 0.072, Math.PI / 2);
+}
+
 function heartPath(ctx, s, cx, cy, w) {
   ctx.beginPath();
   ctx.moveTo(cx * s, (cy + w * 0.95) * s);
@@ -303,15 +434,9 @@ function paintHeartRuby(ctx, s) {
     ctx.arc(x * s, y * s, s * 0.035, 0, Math.PI * 2);
     ctx.fill();
   }
-  // Top pearl finial.
-  const pg = ctx.createRadialGradient(s * 0.49, s * 0.16, 0, s * 0.5, s * 0.17, s * 0.045);
-  pg.addColorStop(0, '#ffffff');
-  pg.addColorStop(0.6, '#efe6d8');
-  pg.addColorStop(1, '#a89880');
-  ctx.fillStyle = pg;
-  ctx.beginPath();
-  ctx.arc(s * 0.5, s * 0.17, s * 0.04, 0, Math.PI * 2);
-  ctx.fill();
+  // Gold caps at the cleft and the tip.
+  goldCap(ctx, s, 0.5, 0.315, 0.06);
+  goldCap(ctx, s, 0.5, 0.83, 0.065, Math.PI);
 }
 
 // Four-point twinkle with a soft halo, drawn live over a cached gem.
@@ -337,8 +462,8 @@ export function sparkle(ctx, x, y, r, a, tint = '255,255,255') {
 
 export function drawGemHQ(ctx, s, kind = 'blue', t = 0) {
   if (kind === 'red') blit(ctx, 'ruby', s, paintHeartRuby);
-  else if (kind === 'green') blit(ctx, 'emerald', s, (c, n) => paintBrilliant(c, n, EMERALD));
-  else blit(ctx, 'sapphire', s, (c, n) => paintBrilliant(c, n, SAPPHIRE));
+  else if (kind === 'green') blit(ctx, 'emerald', s, (c, n) => paintMounted(c, n, EMERALD, '90,255,170'));
+  else blit(ctx, 'sapphire', s, (c, n) => paintMounted(c, n, VIVID_BLUE, '90,190,255'));
   // Two glints that take turns.
   const p = (t * 0.8) % 2;
   const a1 = Math.max(0, Math.sin(Math.min(1, p) * Math.PI));
@@ -347,8 +472,8 @@ export function drawGemHQ(ctx, s, kind = 'blue', t = 0) {
     sparkle(ctx, s * 0.36, s * 0.34, s * 0.07, a1);
     sparkle(ctx, s * 0.62, s * 0.52, s * 0.05, a2 * 0.8, '255,200,210');
   } else {
-    sparkle(ctx, s * 0.4, s * 0.19, s * 0.07, a1);
-    sparkle(ctx, s * 0.66, s * 0.47, s * 0.05, a2 * 0.8, '200,235,255');
+    sparkle(ctx, s * 0.5, s * 0.1, s * 0.08, 0.35 + a1 * 0.65, '255,240,190');
+    sparkle(ctx, s * 0.36, s * 0.32, s * 0.05, a2 * 0.9, '200,235,255');
   }
 }
 
@@ -380,84 +505,119 @@ function smoothPath(ctx, pts, s) {
   ctx.closePath();
 }
 
+// A clump of moss: overlapping round leaves with a lit top.
+function mossClump(ctx, s, x, y, r, seed) {
+  const rnd = rng(seed);
+  for (let i = 0; i < 9; i++) {
+    const a = rnd() * Math.PI * 2;
+    const d = rnd() * r;
+    const px = (x + Math.cos(a) * d) * s;
+    const py = (y + Math.sin(a) * d * 0.7) * s;
+    const rr = s * r * (0.35 + rnd() * 0.3);
+    const g = ctx.createRadialGradient(px - rr * 0.3, py - rr * 0.4, 0, px, py, rr);
+    g.addColorStop(0, '#c4f27c');
+    g.addColorStop(0.45, '#5fb43a');
+    g.addColorStop(1, '#23601a');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(px, py, rr, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 // Granite boulder: chiselled silhouette, speckled grain, cracks, rim light.
-function paintBoulder(ctx, s, tones) {
-  shadow(ctx, s, 0.42, 0.88, 0.45);
-  const pts = rockOutline(11, 0.42, 0.39);
-  smoothPath(ctx, pts, s);
-  const g = ctx.createRadialGradient(s * 0.36, s * 0.3, s * 0.02, s * 0.52, s * 0.56, s * 0.52);
-  g.addColorStop(0, tones[3]);
-  g.addColorStop(0.35, tones[2]);
-  g.addColorStop(0.75, tones[1]);
-  g.addColorStop(1, tones[0]);
+function paintBoulder(ctx, s) {
+  // Round temple boulder: cracked into plates, mossy, warmly rim-lit.
+  shadow(ctx, s, 0.42, 0.9, 0.5);
+  const cx = 0.5;
+  const cy = 0.52;
+  const R = 0.41;
+  const body = () => {
+    ctx.beginPath();
+    ctx.arc(cx * s, cy * s, R * s, 0, Math.PI * 2);
+  };
+  body();
+  const g = ctx.createRadialGradient(s * 0.38, s * 0.36, s * 0.02, s * 0.5, s * 0.55, s * 0.46);
+  g.addColorStop(0, '#9b958c');
+  g.addColorStop(0.35, '#5b5752');
+  g.addColorStop(0.8, '#2c2a27');
+  g.addColorStop(1, '#171614');
   ctx.fillStyle = g;
   ctx.fill();
   ctx.save();
-  smoothPath(ctx, pts, s);
+  body();
   ctx.clip();
-  // Chisel planes: a few flat facets catch the light differently.
-  const r = rng(23);
+  // Plates: a central pentagon with seams running out to the rim.
+  const pc = [0.47, 0.47];
+  const pr = 0.15;
+  const verts = [];
   for (let i = 0; i < 5; i++) {
-    const cx = 0.25 + r() * 0.5;
-    const cy = 0.25 + r() * 0.5;
-    const rad = 0.12 + r() * 0.12;
+    const a = -Math.PI / 2 + (i / 5) * Math.PI * 2 + 0.2;
+    verts.push([pc[0] + Math.cos(a) * pr, pc[1] + Math.sin(a) * pr * 0.9, a]);
+  }
+  // Plate shading: each outer plate a touch different.
+  for (let i = 0; i < 5; i++) {
+    const [x0, y0, a0] = verts[i];
+    const [x1, y1, a1] = verts[(i + 1) % 5];
     ctx.beginPath();
-    for (let k = 0; k < 5; k++) {
-      const a = (k / 5) * Math.PI * 2 + r();
-      const x = (cx + Math.cos(a) * rad) * s;
-      const y = (cy + Math.sin(a) * rad * 0.8) * s;
-      if (k === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    }
+    ctx.moveTo(x0 * s, y0 * s);
+    ctx.lineTo((cx + Math.cos(a0) * 0.6) * s, (cy + Math.sin(a0) * 0.6) * s);
+    ctx.lineTo((cx + Math.cos(a1) * 0.6) * s, (cy + Math.sin(a1) * 0.6) * s);
+    ctx.lineTo(x1 * s, y1 * s);
     ctx.closePath();
-    const lit = cy < 0.45 && cx < 0.55;
-    ctx.fillStyle = lit ? 'rgba(255,245,225,0.09)' : 'rgba(0,0,0,0.12)';
+    const mid = (a0 + a1) / 2;
+    const lit = Math.cos(mid - (-2.4));
+    ctx.fillStyle = lit > 0 ? `rgba(255,240,215,${0.07 * lit})` : `rgba(0,0,0,${-0.18 * lit})`;
     ctx.fill();
   }
-  // Grain.
-  for (let i = 0; i < 70; i++) {
-    const x = r() * s;
-    const y = r() * s;
-    const light = r() > 0.55;
-    ctx.fillStyle = light ? 'rgba(255,248,230,0.22)' : 'rgba(10,8,6,0.28)';
-    ctx.fillRect(x, y, Math.max(0.6, s * 0.012), Math.max(0.6, s * 0.012));
-  }
-  // Cracks with a lit lip.
-  const crack = (pts2) => {
-    ctx.lineCap = 'round';
+  ctx.beginPath();
+  verts.forEach(([x, y], i) => (i ? ctx.lineTo(x * s, y * s) : ctx.moveTo(x * s, y * s)));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,245,225,0.12)';
+  ctx.fill();
+  const seam = (pts) => {
     ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
     ctx.beginPath();
-    pts2.forEach(([x, y], k) => (k ? ctx.lineTo(x * s, y * s) : ctx.moveTo(x * s, y * s)));
-    ctx.strokeStyle = 'rgba(8,6,4,0.7)';
-    ctx.lineWidth = Math.max(0.8, s * 0.018);
+    pts.forEach(([x, y], k) => (k ? ctx.lineTo(x * s, y * s) : ctx.moveTo(x * s, y * s)));
+    ctx.strokeStyle = 'rgba(10,8,6,0.85)';
+    ctx.lineWidth = Math.max(1, s * 0.022);
     ctx.stroke();
-    ctx.translate(s * 0.008, s * 0.01);
-    ctx.strokeStyle = 'rgba(255,240,215,0.2)';
-    ctx.lineWidth = Math.max(0.5, s * 0.008);
+    ctx.save();
+    ctx.translate(s * 0.01, s * 0.012);
+    ctx.strokeStyle = 'rgba(255,238,210,0.28)';
+    ctx.lineWidth = Math.max(0.5, s * 0.009);
     ctx.stroke();
-    ctx.translate(-s * 0.008, -s * 0.01);
+    ctx.restore();
   };
-  crack([[0.6, 0.2], [0.55, 0.34], [0.63, 0.44], [0.58, 0.55]]);
-  crack([[0.63, 0.44], [0.75, 0.5]]);
-  crack([[0.25, 0.62], [0.36, 0.66], [0.4, 0.78]]);
-  // Ambient occlusion at the base.
-  const ao = ctx.createLinearGradient(0, s * 0.55, 0, s * 0.95);
-  ao.addColorStop(0, 'rgba(0,0,0,0)');
-  ao.addColorStop(1, 'rgba(0,0,0,0.45)');
-  ctx.fillStyle = ao;
+  seam([...verts.map(([x, y]) => [x, y]), verts[0]]);
+  for (const [x, y, a] of verts) seam([[x, y], [x + Math.cos(a) * 0.12, y + Math.sin(a) * 0.1 + 0.01], [cx + Math.cos(a) * 0.5, cy + Math.sin(a) * 0.5]]);
+  // Grain.
+  const r = rng(23);
+  for (let i = 0; i < 60; i++) {
+    ctx.fillStyle = r() > 0.5 ? 'rgba(255,248,230,0.18)' : 'rgba(0,0,0,0.25)';
+    ctx.fillRect(r() * s, r() * s, Math.max(0.6, s * 0.012), Math.max(0.6, s * 0.012));
+  }
+  // Moss on the crown and the shaded base.
+  mossClump(ctx, s, 0.72, 0.24, 0.09, 5);
+  mossClump(ctx, s, 0.24, 0.8, 0.08, 9);
+  // Warm bounce light on the lower right.
+  const bounce = ctx.createRadialGradient(s * 0.85, s * 0.85, 0, s * 0.85, s * 0.85, s * 0.3);
+  bounce.addColorStop(0, 'rgba(255,190,110,0.25)');
+  bounce.addColorStop(1, 'rgba(255,190,110,0)');
+  ctx.fillStyle = bounce;
   ctx.fillRect(0, 0, s, s);
   ctx.restore();
-  // Rim light along the upper-left edge and a dark outline.
-  smoothPath(ctx, pts, s);
-  ctx.strokeStyle = 'rgba(12,10,8,0.85)';
-  ctx.lineWidth = Math.max(1, s * 0.022);
+  body();
+  ctx.strokeStyle = '#0e0c0a';
+  ctx.lineWidth = Math.max(1, s * 0.024);
   ctx.stroke();
   ctx.save();
-  smoothPath(ctx, pts, s);
+  body();
   ctx.clip();
   ctx.beginPath();
-  ctx.arc(s * 0.5, s * 0.53, s * 0.4, Math.PI * 0.95, Math.PI * 1.6);
-  ctx.strokeStyle = 'rgba(255,246,228,0.45)';
+  ctx.arc(cx * s, cy * s, (R - 0.015) * s, Math.PI * 0.95, Math.PI * 1.62);
+  ctx.strokeStyle = 'rgba(255,236,200,0.6)';
   ctx.lineWidth = Math.max(1, s * 0.03);
   ctx.stroke();
   ctx.restore();
@@ -466,46 +626,51 @@ function paintBoulder(ctx, s, tones) {
 // Polished rolling stone: a sphere with a gold-inlaid spiral so it reads
 // as "round" at a glance.
 function paintOrb(ctx, s) {
-  shadow(ctx, s, 0.38, 0.9, 0.42);
-  const g = ctx.createRadialGradient(s * 0.37, s * 0.33, s * 0.02, s * 0.5, s * 0.52, s * 0.44);
-  g.addColorStop(0, '#f3efe6');
-  g.addColorStop(0.25, '#b8b2a6');
-  g.addColorStop(0.7, '#6e685e');
-  g.addColorStop(1, '#2e2a25');
-  ctx.fillStyle = g;
+  // Rolling stone: a carved disc in a gold ring with an inlaid spiral.
+  shadow(ctx, s, 0.4, 0.9, 0.48);
+  const c = [s * 0.5, s * 0.52];
+  const R = s * 0.41;
   ctx.beginPath();
-  ctx.arc(s * 0.5, s * 0.52, s * 0.39, 0, Math.PI * 2);
+  ctx.arc(c[0], c[1], R, 0, Math.PI * 2);
+  ctx.fillStyle = goldFill(ctx, 0, s * 0.1, s, s * 0.95);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(15,12,10,0.85)';
-  ctx.lineWidth = Math.max(1, s * 0.02);
+  ctx.strokeStyle = '#4a2c00';
+  ctx.lineWidth = Math.max(1, s * 0.022);
   ctx.stroke();
-  // Inlaid spiral.
+  const inner = R * 0.84;
+  ctx.beginPath();
+  ctx.arc(c[0], c[1], inner, 0, Math.PI * 2);
+  const g = ctx.createRadialGradient(s * 0.4, s * 0.38, s * 0.02, c[0], c[1], inner);
+  g.addColorStop(0, '#a9a397');
+  g.addColorStop(0.45, '#67625a');
+  g.addColorStop(1, '#2a2723');
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(40,24,0,0.8)';
+  ctx.lineWidth = Math.max(1, s * 0.016);
+  ctx.stroke();
   ctx.save();
   ctx.beginPath();
-  ctx.arc(s * 0.5, s * 0.52, s * 0.37, 0, Math.PI * 2);
+  ctx.arc(c[0], c[1], inner, 0, Math.PI * 2);
   ctx.clip();
   ctx.beginPath();
-  for (let a = 0; a < Math.PI * 4.2; a += 0.12) {
-    const rr = s * (0.03 + a * 0.022);
-    const x = s * 0.5 + Math.cos(a) * rr;
-    const y = s * 0.52 + Math.sin(a) * rr;
+  for (let a = 0; a < Math.PI * 4.4; a += 0.1) {
+    const rr = s * (0.02 + a * 0.021);
+    const x = c[0] + Math.cos(a) * rr;
+    const y = c[1] + Math.sin(a) * rr;
     if (a === 0) ctx.moveTo(x, y);
     else ctx.lineTo(x, y);
   }
-  ctx.strokeStyle = '#3a2a0c';
-  ctx.lineWidth = Math.max(1.2, s * 0.045);
   ctx.lineCap = 'round';
+  ctx.strokeStyle = '#2a1800';
+  ctx.lineWidth = Math.max(1.4, s * 0.055);
   ctx.stroke();
-  const gg = ctx.createLinearGradient(s * 0.2, s * 0.2, s * 0.8, s * 0.8);
-  gg.addColorStop(0, GOLD[5]);
-  gg.addColorStop(0.4, GOLD[3]);
-  gg.addColorStop(1, GOLD[1]);
-  ctx.strokeStyle = gg;
-  ctx.lineWidth = Math.max(0.8, s * 0.026);
+  ctx.strokeStyle = goldFill(ctx, s * 0.2, s * 0.2, s * 0.8, s * 0.8);
+  ctx.lineWidth = Math.max(1, s * 0.034);
   ctx.stroke();
+  mossClump(ctx, s, 0.7, 0.28, 0.07, 3);
   ctx.restore();
-  // Specular.
-  const sp = ctx.createRadialGradient(s * 0.36, s * 0.3, 0, s * 0.36, s * 0.3, s * 0.14);
+  const sp = ctx.createRadialGradient(s * 0.34, s * 0.28, 0, s * 0.34, s * 0.28, s * 0.14);
   sp.addColorStop(0, 'rgba(255,255,255,0.85)');
   sp.addColorStop(1, 'rgba(255,255,255,0)');
   ctx.fillStyle = sp;
@@ -514,77 +679,116 @@ function paintOrb(ctx, s) {
 
 export function drawBoulderHQ(ctx, s, round) {
   if (round) blit(ctx, 'orb', s, paintOrb);
-  else blit(ctx, 'boulder', s, (c, n) => paintBoulder(c, n, ['#1b1815', '#3d3731', '#6d655a', '#b2a893']));
+  else blit(ctx, 'boulder', s, paintBoulder);
 }
 
 // ---------- crate ----------
 
 function paintCrate(ctx, s) {
-  shadow(ctx, s, 0.44, 0.9, 0.4);
-  const x0 = s * 0.1;
-  const y0 = s * 0.1;
-  const w = s * 0.8;
-  const h = s * 0.78;
-  // Planks.
-  const planks = 4;
-  for (let i = 0; i < planks; i++) {
-    const py = y0 + (h / planks) * i;
-    const g = ctx.createLinearGradient(0, py, 0, py + h / planks);
-    const base = i % 2 ? ['#8a5a2b', '#6b411c'] : ['#9a6532', '#734720'];
-    g.addColorStop(0, base[0]);
-    g.addColorStop(1, base[1]);
-    ctx.fillStyle = g;
-    ctx.fillRect(x0, py, w, h / planks);
-    // Grain.
-    const r = rng(31 + i);
-    ctx.strokeStyle = 'rgba(40,20,6,0.35)';
-    ctx.lineWidth = Math.max(0.5, s * 0.006);
-    for (let k = 0; k < 3; k++) {
-      const gy = py + (h / planks) * (0.25 + r() * 0.5);
-      ctx.beginPath();
-      ctx.moveTo(x0, gy);
-      ctx.bezierCurveTo(x0 + w * 0.3, gy - s * 0.015, x0 + w * 0.6, gy + s * 0.015, x0 + w, gy);
-      ctx.stroke();
-    }
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
-    ctx.fillRect(x0, py + h / planks - Math.max(1, s * 0.012), w, Math.max(1, s * 0.012));
-    ctx.fillStyle = 'rgba(255,220,170,0.15)';
-    ctx.fillRect(x0, py, w, Math.max(0.6, s * 0.008));
-  }
-  // Brass frame and diagonal brace.
-  const brass = ctx.createLinearGradient(x0, y0, x0 + w, y0 + h);
-  brass.addColorStop(0, GOLD[4]);
-  brass.addColorStop(0.4, GOLD[3]);
-  brass.addColorStop(1, GOLD[1]);
-  ctx.strokeStyle = 'rgba(30,18,4,0.9)';
-  ctx.lineWidth = s * 0.075;
-  ctx.strokeRect(x0 + s * 0.03, y0 + s * 0.03, w - s * 0.06, h - s * 0.06);
-  ctx.strokeStyle = brass;
-  ctx.lineWidth = s * 0.05;
-  ctx.strokeRect(x0 + s * 0.03, y0 + s * 0.03, w - s * 0.06, h - s * 0.06);
+  // A gilded strongbox of dark timber, seen a little from above so its top
+  // and right faces show.
+  shadow(ctx, s, 0.46, 0.92, 0.45);
+  const P = (x, y) => [x * s, y * s];
+  const quad = (pts, fill) => {
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => (i ? ctx.lineTo(x * s, y * s) : ctx.moveTo(x * s, y * s)));
+    ctx.closePath();
+    ctx.fillStyle = fill;
+    ctx.fill();
+  };
+  const F = [[0.08, 0.3], [0.8, 0.3], [0.8, 0.92], [0.08, 0.92]];
+  const Tp = [[0.08, 0.3], [0.8, 0.3], [0.92, 0.16], [0.2, 0.16]];
+  const Rt = [[0.8, 0.3], [0.92, 0.16], [0.92, 0.78], [0.8, 0.92]];
+  // Timber faces.
+  const wood = (y0, y1, a, b) => {
+    const g = ctx.createLinearGradient(0, y0 * s, 0, y1 * s);
+    g.addColorStop(0, a);
+    g.addColorStop(1, b);
+    return g;
+  };
+  quad(Tp, wood(0.16, 0.3, '#b27a3e', '#8a5a28'));
+  quad(Rt, wood(0.16, 0.92, '#5c3a18', '#3a230c'));
+  quad(F, wood(0.3, 0.92, '#9a6532', '#6a4019'));
+  // Planks and grain on the front.
   ctx.save();
   ctx.beginPath();
-  ctx.rect(x0 + s * 0.06, y0 + s * 0.06, w - s * 0.12, h - s * 0.12);
+  ctx.rect(0.08 * s, 0.3 * s, 0.72 * s, 0.62 * s);
   ctx.clip();
-  ctx.strokeStyle = 'rgba(30,18,4,0.8)';
-  ctx.lineWidth = s * 0.08;
+  for (let i = 1; i < 4; i++) {
+    const y = (0.3 + i * 0.155) * s;
+    ctx.fillStyle = 'rgba(30,14,2,0.6)';
+    ctx.fillRect(0.08 * s, y - s * 0.008, 0.72 * s, s * 0.016);
+    ctx.fillStyle = 'rgba(255,210,150,0.2)';
+    ctx.fillRect(0.08 * s, y + s * 0.008, 0.72 * s, s * 0.006);
+  }
+  const r = rng(41);
+  ctx.strokeStyle = 'rgba(40,18,4,0.35)';
+  ctx.lineWidth = Math.max(0.5, s * 0.006);
+  for (let k = 0; k < 10; k++) {
+    const gy = (0.33 + r() * 0.56) * s;
+    ctx.beginPath();
+    ctx.moveTo(0.08 * s, gy);
+    ctx.bezierCurveTo(0.3 * s, gy - s * 0.02, 0.55 * s, gy + s * 0.02, 0.8 * s, gy);
+    ctx.stroke();
+  }
+  // Diagonal brace.
+  ctx.lineCap = 'butt';
+  ctx.strokeStyle = '#2a1504';
+  ctx.lineWidth = s * 0.12;
   ctx.beginPath();
-  ctx.moveTo(x0, y0);
-  ctx.lineTo(x0 + w, y0 + h);
+  ctx.moveTo(...P(0.1, 0.34));
+  ctx.lineTo(...P(0.78, 0.88));
   ctx.stroke();
-  ctx.strokeStyle = '#7a4c22';
-  ctx.lineWidth = s * 0.055;
+  ctx.strokeStyle = wood(0.3, 0.9, '#a86e36', '#744620');
+  ctx.lineWidth = s * 0.09;
   ctx.stroke();
   ctx.restore();
-  // Rivets.
-  for (const [rx, ry] of [[0.17, 0.17], [0.83, 0.17], [0.17, 0.81], [0.83, 0.81]]) {
-    const g = ctx.createRadialGradient((rx - 0.01) * s, (ry - 0.01) * s, 0, rx * s, ry * s, s * 0.035);
-    g.addColorStop(0, '#fffbe8');
-    g.addColorStop(0.5, GOLD[3]);
-    g.addColorStop(1, GOLD[0]);
-    ctx.fillStyle = g;
+  // Gold frame along every edge.
+  const edge = (a, b, w = 0.05) => {
+    ctx.lineCap = 'round';
     ctx.beginPath();
-    ctx.arc(rx * s, ry * s, s * 0.03, 0, Math.PI * 2);
+    ctx.moveTo(...P(...a));
+    ctx.lineTo(...P(...b));
+    ctx.strokeStyle = '#3d2400';
+    ctx.lineWidth = s * (w + 0.022);
+    ctx.stroke();
+    ctx.strokeStyle = goldFill(ctx, a[0] * s, a[1] * s, b[0] * s + 1, b[1] * s + 1);
+    ctx.lineWidth = s * w;
+    ctx.stroke();
+  };
+  edge(F[0], F[1]);
+  edge(F[3], F[2]);
+  edge(F[0], F[3]);
+  edge(F[1], F[2]);
+  edge(Tp[3], Tp[2], 0.04);
+  edge(Tp[0], Tp[3], 0.04);
+  edge(Tp[1], Tp[2], 0.04);
+  edge(Rt[2], Rt[3], 0.04);
+  edge(Tp[2], Rt[2], 0.04);
+  // Corner brackets with rivets.
+  for (const [x, y, sx, sy] of [[0.08, 0.3, 1, 1], [0.8, 0.3, -1, 1], [0.08, 0.92, 1, -1], [0.8, 0.92, -1, -1]]) {
+    ctx.beginPath();
+    ctx.moveTo(...P(x, y));
+    ctx.lineTo(...P(x + sx * 0.17, y));
+    ctx.lineTo(...P(x + sx * 0.17, y + sy * 0.05));
+    ctx.lineTo(...P(x + sx * 0.05, y + sy * 0.05));
+    ctx.lineTo(...P(x + sx * 0.05, y + sy * 0.17));
+    ctx.lineTo(...P(x, y + sy * 0.17));
+    ctx.closePath();
+    ctx.fillStyle = goldFill(ctx, (x - 0.05) * s, (y - 0.05) * s, (x + 0.15) * s, (y + 0.15) * s);
+    ctx.fill();
+    ctx.strokeStyle = '#3d2400';
+    ctx.lineWidth = Math.max(0.8, s * 0.01);
+    ctx.stroke();
+    const rx = x + sx * 0.08;
+    const ry = y + sy * 0.08;
+    const rg = ctx.createRadialGradient((rx - 0.01) * s, (ry - 0.01) * s, 0, rx * s, ry * s, s * 0.03);
+    rg.addColorStop(0, '#fffbe8');
+    rg.addColorStop(0.5, '#e8b43a');
+    rg.addColorStop(1, '#6a4000');
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.arc(rx * s, ry * s, s * 0.026, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -598,48 +802,50 @@ export function drawCrateHQ(ctx, s) {
 const KEY_GEMS = { red: RUBY, gold: GOLD, green: EMERALD, violet: ['#12052a', '#3a1070', '#6a2bc0', '#9d5cf0', '#d2b0ff', '#f5ecff'] };
 
 function paintKey(ctx, s, color) {
-  shadow(ctx, s, 0.3, 0.86, 0.35);
-  const gold = ctx.createLinearGradient(s * 0.1, s * 0.2, s * 0.9, s * 0.7);
-  gold.addColorStop(0, GOLD[5]);
-  gold.addColorStop(0.3, GOLD[3]);
-  gold.addColorStop(0.7, GOLD[2]);
-  gold.addColorStop(1, GOLD[1]);
-  const outline = () => {
-    ctx.strokeStyle = GOLD[0];
-    ctx.lineWidth = Math.max(1, s * 0.02);
+  // Gold key with a flower bow and a jewel at its heart.
+  shadow(ctx, s, 0.32, 0.84, 0.38);
+  const gold = goldFill(ctx, s * 0.1, s * 0.3, s * 0.8, s * 0.7);
+  const ink = () => {
+    ctx.strokeStyle = '#3d2400';
+    ctx.lineWidth = Math.max(1, s * 0.022);
     ctx.stroke();
   };
-  // Shaft and bit.
+  ctx.beginPath();
+  ctx.rect(s * 0.38, s * 0.455, s * 0.52, s * 0.085);
+  ctx.rect(s * 0.72, s * 0.54, s * 0.07, s * 0.14);
+  ctx.rect(s * 0.83, s * 0.54, s * 0.07, s * 0.1);
   ctx.fillStyle = gold;
-  ctx.beginPath();
-  ctx.rect(s * 0.44, s * 0.44, s * 0.44, s * 0.08);
-  ctx.rect(s * 0.72, s * 0.52, s * 0.07, s * 0.14);
-  ctx.rect(s * 0.82, s * 0.52, s * 0.06, s * 0.1);
   ctx.fill();
-  outline();
-  // Ornate bow: a quatrefoil ring.
+  ink();
+  ctx.fillStyle = 'rgba(255,255,230,0.6)';
+  ctx.fillRect(s * 0.4, s * 0.465, s * 0.48, s * 0.018);
+  const cx = s * 0.28;
+  const cy = s * 0.5;
   ctx.beginPath();
-  for (let i = 0; i < 4; i++) {
-    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
-    ctx.moveTo(s * (0.3 + Math.cos(a) * 0.1) + s * 0.08, s * (0.48 + Math.sin(a) * 0.1));
-    ctx.arc(s * (0.3 + Math.cos(a) * 0.1), s * (0.48 + Math.sin(a) * 0.1), s * 0.08, 0, Math.PI * 2);
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const px = cx + Math.cos(a) * s * 0.095;
+    const py = cy + Math.sin(a) * s * 0.095;
+    ctx.moveTo(px + s * 0.075, py);
+    ctx.arc(px, py, s * 0.075, 0, Math.PI * 2);
   }
   ctx.fillStyle = gold;
   ctx.fill();
-  outline();
-  // Gem set in the bow.
+  ink();
+  ctx.beginPath();
+  ctx.arc(cx, cy, s * 0.11, 0, Math.PI * 2);
+  ctx.fillStyle = gold;
+  ctx.fill();
   const stones = KEY_GEMS[color] || RUBY;
-  const g = ctx.createRadialGradient(s * 0.27, s * 0.45, 0, s * 0.3, s * 0.48, s * 0.1);
+  const g = ctx.createRadialGradient(cx - s * 0.025, cy - s * 0.03, 0, cx, cy, s * 0.07);
   g.addColorStop(0, stones[5]);
   g.addColorStop(0.35, stones[3]);
   g.addColorStop(1, stones[1]);
   ctx.fillStyle = g;
   ctx.beginPath();
-  ctx.arc(s * 0.3, s * 0.48, s * 0.085, 0, Math.PI * 2);
+  ctx.arc(cx, cy, s * 0.062, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = GOLD[0];
-  ctx.lineWidth = Math.max(0.8, s * 0.015);
-  ctx.stroke();
+  ink();
 }
 
 export function drawKeyHQ(ctx, s, color) {

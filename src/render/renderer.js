@@ -293,12 +293,35 @@ export class Renderer {
     } else {
       ctx.imageSmoothingEnabled = true;
       this.drawWorld(ctx, T, now, ox, oy);
+      ctx.drawImage(this.vignette(cw, ch), 0, 0);
     }
 
     if (this.flash.color && now < this.flash.until) {
       ctx.fillStyle = this.flash.color;
       ctx.fillRect(0, 0, cw, ch);
     }
+  }
+
+  // Warm torchlit grade: a golden glow in the middle, shadowed corners.
+  vignette(w, h) {
+    if (this.vig && this.vig.width === w && this.vig.height === h) return this.vig;
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const x = c.getContext('2d');
+    const r = Math.hypot(w, h) / 2;
+    const glow = x.createRadialGradient(w / 2, h * 0.45, 0, w / 2, h * 0.45, r * 0.7);
+    glow.addColorStop(0, 'rgba(255,200,120,0.08)');
+    glow.addColorStop(1, 'rgba(255,200,120,0)');
+    x.fillStyle = glow;
+    x.fillRect(0, 0, w, h);
+    const dark = x.createRadialGradient(w / 2, h / 2, r * 0.55, w / 2, h / 2, r);
+    dark.addColorStop(0, 'rgba(10,5,0,0)');
+    dark.addColorStop(1, 'rgba(10,5,0,0.5)');
+    x.fillStyle = dark;
+    x.fillRect(0, 0, w, h);
+    this.vig = c;
+    return c;
   }
 
   updateCamera(now, viewW, viewH) {
@@ -528,7 +551,9 @@ export class Renderer {
           ctx.save();
           ctx.translate(pp.x * T, pp.y * T);
           ctx.globalAlpha = 0.85;
-          polished(ctx, `hero:${s.partner.who}${s.partner.dir}0`, T, (c, n) => S2.drawExplorer(c, n, s.partner.who, s.partner.dir, 0, {}));
+          const H = T * 1.18;
+          ctx.translate((T - H) / 2, T - H);
+          polished(ctx, `hero:${s.partner.who}${s.partner.dir}0`, H, (c, n) => S2.drawExplorer(c, n, s.partner.who, s.partner.dir, 0, {}));
           ctx.restore();
         },
       });
@@ -666,7 +691,12 @@ export class Renderer {
     const blink = s.hero.invul > 0 && Math.floor(now / 80) % 2 === 0;
     if (!blink) {
       const who = s.hero.who;
-      polished(ctx, `hero:${who}${s.hero.dir}${frame}`, T, (c, n) => S2.drawExplorer(c, n, who, s.hero.dir, frame, {}));
+      // Heroes are drawn a little larger than a tile so they read at a glance.
+      const H = T * 1.18;
+      ctx.save();
+      ctx.translate((T - H) / 2, T - H);
+      polished(ctx, `hero:${who}${s.hero.dir}${frame}`, H, (c, n) => S2.drawExplorer(c, n, who, s.hero.dir, frame, {}));
+      ctx.restore();
       if (now < this.heroHurtUntil) {
         ctx.fillStyle = 'rgba(255,60,60,0.4)';
         ctx.beginPath();
