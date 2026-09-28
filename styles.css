@@ -40,8 +40,7 @@ button { font: inherit; color: inherit; }
   margin: 0 auto;
   width: 100%;
   max-width: 560px;
-  height: 100vh;
-  height: 100dvh;
+  height: 100%;
   overflow: hidden;
   background: var(--bg);
   box-shadow: 0 0 0 1px #000, 0 0 60px rgba(0, 0, 0, 0.6);
@@ -536,7 +535,7 @@ button { font: inherit; color: inherit; }
   .swipe-mode-on#screen-game.active { grid-template-columns: 0 1fr 0; }
 }
 @media (min-width: 900px) and (min-height: 700px) {
-  #app { border-radius: 18px; height: min(100dvh, 960px); top: 50%; transform: translateY(-50%); }
+  #app { border-radius: 18px; height: min(100%, 960px); top: 50%; transform: translateY(-50%); }
 }
 @media (prefers-reduced-motion: reduce) {
   .node.current .disc, .tap-begin { animation: none; }

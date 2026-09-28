@@ -388,11 +388,22 @@ function openSettings(fromGame) {
     closeModal();
     if (fromGame) openPause();
   };
-  el.querySelector('[data-x=reset]').onclick = () => {
-    if (!confirm('Erase all progress, coins and upgrades?')) return;
-    Object.assign(profile, JSON.parse(JSON.stringify({ ...loadDefaults() })));
+  // Two-tap confirmation built into the page (no browser dialogs).
+  const reset = el.querySelector('[data-x=reset]');
+  reset.onclick = () => {
+    if (!reset.dataset.armed) {
+      reset.dataset.armed = '1';
+      reset.textContent = 'Tap again to erase everything';
+      setTimeout(() => {
+        delete reset.dataset.armed;
+        reset.textContent = 'Reset progress';
+      }, 3000);
+      return;
+    }
+    Object.assign(profile, loadDefaults());
     save();
     closeModal();
+    session = null;
     showMap();
   };
 }
