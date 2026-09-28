@@ -17,7 +17,7 @@ function keyOf(s) {
   return JSON.stringify([
     s.hero.x, s.hero.y, s.hero.dir, s.hero.windup, s.hero.slide, s.hero.tool, s.tick % 12,
     s.partner && [s.partner.x, s.partner.y],
-    s.chan, Object.values(s.meta).map((m) => `${m.lit ? 1 : 0}${m.traced ? 1 : 0}${m.on ? 1 : 0}${m.down ? 1 : 0}`).join(''),
+    s.chan, Object.values(s.meta).map((m) => `${m.lit ? 1 : 0}${m.traced ? 1 : 0}${m.on ? 1 : 0}${m.down ? 1 : 0}${m.melt ? m.melt - s.tick : ''}`).join(''),
     s.boss && [s.boss.x, s.boss.y, s.boss.dir, s.boss.hp, s.boss.clock % 60, s.boss.stun, s.boss.charge, s.boss.wind, s.boss.breath, s.boss.cannon, s.boss.strike, s.boss.sweep],
     s.obj.map((o) => (o ? `${o.t}${o.st[0]}${o.slide || ''}${o.o || ''}` : '')).join(),
     s.floor.map((f) => f[0]).join(''),
@@ -42,7 +42,15 @@ function search(start, goal) {
           n.hero.dir = c.toUpperCase();
         } else {
           const a = c === '.' ? null : c === 'T' ? { type: 'tool' } : c === 'X' ? { type: 'swap' } : { type: 'move', dir: c };
-          if (!act(n, a)) continue;
+          if (!act(n, a)) {
+            // A bump still turns the hero to face that way (no tick).
+            if (!a || a.type !== 'move' || s.hero.dir === a.dir || n.hero.dir !== a.dir) continue;
+            const k2 = keyOf(n);
+            if (seen.has(k2)) continue;
+            seen.add(k2);
+            next.push({ s: n, path: path + a.dir.toLowerCase() });
+            continue;
+          }
         }
         if (n.hurts > hurts || n.status === 'dead') continue;
         if (n.status === 'won' && goal(n) !== true) continue;

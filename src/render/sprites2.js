@@ -231,11 +231,14 @@ export function drawSensor(ctx, s, lit, pal, t) {
   }
 }
 
-export function drawBeamCell(ctx, s, laser, t) {
+export function drawBeamCell(ctx, s, laser, t, axis = '+') {
   const w = s * (laser ? 0.12 : 0.18) * (1 + Math.sin(t * 25) * 0.15);
   ctx.fillStyle = laser ? 'rgba(255,45,85,0.85)' : 'rgba(255,236,150,0.8)';
-  ctx.fillRect(0, s / 2 - w / 2, s, w);
-  ctx.fillRect(s / 2 - w / 2, 0, w, s);
+  if (axis !== '|') ctx.fillRect(0, s / 2 - w / 2, s, w);
+  if (axis !== '-') ctx.fillRect(s / 2 - w / 2, 0, w, s);
+  ctx.fillStyle = laser ? 'rgba(255,200,210,0.6)' : 'rgba(255,255,240,0.7)';
+  if (axis !== '|') ctx.fillRect(0, s / 2 - w / 6, s, w / 3);
+  if (axis !== '-') ctx.fillRect(s / 2 - w / 6, 0, w / 3, s);
 }
 
 export function drawVent(ctx, s, phase, pal) {

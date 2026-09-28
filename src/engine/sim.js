@@ -504,6 +504,13 @@ function useTool(s) {
       emit(s, 'burn', tx, ty);
       return true;
     }
+    if (f === 'ice' && !o && !bodyAt(s, tx, ty) && !enemyAt(s, tx, ty)) {
+      // The torch melts ice back to water.
+      s.floor[ti] = 'water';
+      s.meta[ti] = {};
+      emit(s, 'melt', tx, ty);
+      return true;
+    }
     const e = enemyAt(s, tx, ty);
     if (e && e.t === 'bat') {
       e.dx = dx || -e.dx;
@@ -617,6 +624,8 @@ function traceBeams(s) {
     let x = i0 % s.w;
     let y = (i0 - x) / s.w;
     const cells = [];
+    const axes = [];
+    const add = (i, d, turn) => { cells.push(i); axes.push(turn ? '+' : (d === 'L' || d === 'R' ? '-' : '|')); };
     for (let n = 0; n < 80; n++) {
       const [dx, dy] = DIRS[dir];
       x += dx;
@@ -626,38 +635,38 @@ function traceBeams(s) {
       const f = s.floor[i];
       if (f === 'sensor') {
         s.meta[i].hit = true;
-        cells.push(i);
+        add(i, dir);
         break;
       }
       if (b && b.alive && b.t !== 'naga' && b.x === x && b.y === y) {
-        cells.push(i);
+        add(i, dir);
         if (b.t === 'frost' || m.laser) bossLit = true;
         break;
       }
       const o = s.obj[i];
       if (o && o.t === 'mirror') {
-        cells.push(i);
+        add(i, dir, true);
         dir = reflect(dir, o.o);
         continue;
       }
       if (o) break;
       if (bodyAt(s, x, y)) {
-        cells.push(i);
+        add(i, dir);
         if (m.laser && heroAt(s, x, y)) hurt(s, 1, 'Burned by a laser');
         else if (m.laser) hurt(s, 1, 'Burned by a laser');
         break;
       }
       const e = enemyAt(s, x, y);
       if (e) {
-        cells.push(i);
+        add(i, dir);
         if (m.laser && crushable(e)) killEnemy(s, e, 'laser');
         break;
       }
       const ef = effFloor(s, i);
       if (!BEAM_PASS.has(ef)) break;
-      cells.push(i);
+      add(i, dir);
     }
-    s.beams.push({ from: i0, cells, laser: !!m.laser });
+    s.beams.push({ from: i0, cells, axes, laser: !!m.laser });
   }
   // Frostfang melts under concentrated sunlight (one hit per exposure).
   if (b && b.alive) {
@@ -698,6 +707,7 @@ function updateTriggers(s) {
       const g = group(m.ch);
       g.se++;
       if (m.hit) g.sl++;
+      if (m.latch) g.latch = true;
       if (m.hit !== m.wasHit) emit(s, m.hit ? 'sensorOn' : 'sensorOff', x, y);
       m.wasHit = m.hit;
     } else if (f === 'kolam') {
@@ -708,11 +718,16 @@ function updateTriggers(s) {
   for (const m of Object.values(s.meta)) if (m.ch) chans.add(m.ch);
   for (const ch of chans) {
     const g = groups[ch];
+    if (g && g.latch && g.se > 0 && g.sl === g.se && !s.kolamDone[ch]) {
+      // Latching sun sensors keep their gate open once lit.
+      s.kolamDone[ch] = true;
+      emit(s, 'latch', 0, 0, { ch });
+    }
     if (g && g.all && g.allDown === g.all && !s.kolamDone[ch]) {
       s.kolamDone[ch] = true;
       emit(s, 'latch', 0, 0, { ch });
     }
-    const active = !!(pressed[ch] || (g && g.all && s.kolamDone[ch]) ||
+    const active = !!(pressed[ch] || (g && (g.all || g.latch) && s.kolamDone[ch]) ||
       (g && g.b > 0 && g.bl === g.b) ||
       (g && g.se > 0 && g.sl === g.se) ||
       (g && g.k > 0 && s.kolamDone[ch]));

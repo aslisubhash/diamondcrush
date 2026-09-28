@@ -2,7 +2,7 @@
 // pattern so encounters are puzzles rather than reflex tests.
 import { DIRS, OPPOSITE, CLOCKWISE, MIRROR_DIR } from './constants.js';
 import {
-  idx, inb, emit, heroAt, bodyAt, enemyCanEnter, hurt, killEnemy, returnStolen, lineOfSight, effFloor,
+  idx, inb, emit, heroAt, bodyAt, enemyAt, enemyCanEnter, hurt, killEnemy, returnStolen, lineOfSight, effFloor,
 } from './shared.js';
 import { ENEMY_NAMES } from './constants.js';
 
@@ -224,6 +224,12 @@ function yeti(s, e) {
     e.alive = false;
     s.kills++;
     s.coins += 5;
+    // A yeti wedged in a pit makes a bridge of fur and snow.
+    const pi = idx(s, nx, ny);
+    if (s.floor[pi] === 'pit') {
+      s.floor[pi] = 'filled';
+      s.meta[pi] = { was: 'pit' };
+    }
     emit(s, 'fallPit', nx, ny, { enemy: 'yeti' });
     return;
   }
@@ -232,10 +238,25 @@ function yeti(s, e) {
 }
 
 // Drifts back and forth, freezing water it passes. Harmless.
+// Ice spirits drift along water channels, freezing them, and melt away
+// into mist at the end of the channel, leaving an ice bridge behind.
 function spirit(s, e) {
+  freezeUnder(s, e);
   if (s.tick % 2) return;
-  const r = tryStep(s, e, e.dir, { harmless: true });
-  if (r === false) e.dir = OPPOSITE[e.dir];
+  const c = CLOCKWISE.indexOf(e.dir);
+  for (const d of [e.dir, CLOCKWISE[(c + 3) % 4], CLOCKWISE[(c + 1) % 4]]) {
+    const [dx, dy] = DIRS[d];
+    const nx = e.x + dx;
+    const ny = e.y + dy;
+    if (!inb(s, nx, ny) || s.floor[idx(s, nx, ny)] !== 'water' || bodyAt(s, nx, ny) || enemyAt(s, nx, ny) || s.obj[idx(s, nx, ny)]) continue;
+    e.x = nx;
+    e.y = ny;
+    e.dir = d;
+    freezeUnder(s, e);
+    return;
+  }
+  e.alive = false;
+  emit(s, 'mist', e.x, e.y);
 }
 
 function freezeUnder(s, e) {

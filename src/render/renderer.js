@@ -404,12 +404,12 @@ export class Renderer {
       ctx.restore();
     }
     for (const beam of s.beams || []) {
-      for (const i of beam.cells) {
+      beam.cells.forEach((i, k) => {
         ctx.save();
         ctx.translate((i % s.w) * T, Math.floor(i / s.w) * T);
-        S2.drawBeamCell(ctx, T, beam.laser, tsec);
+        S2.drawBeamCell(ctx, T, beam.laser, tsec, beam.axes ? beam.axes[k] : '+');
         ctx.restore();
-      }
+      });
     }
     if (this.disc && now < this.disc.until) {
       const a = (this.disc.until - now) / 350;

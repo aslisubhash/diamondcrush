@@ -1,5 +1,6 @@
 import { ANGKOR } from './angkor.js';
 import { BAVARIA } from './bavaria.js';
+import { TIBET } from './tibet.js';
 import { parseLevel } from '../engine/level.js';
 
 export const WORLDS = [
@@ -19,7 +20,14 @@ export const WORLDS = [
     levels: BAVARIA,
     playable: true,
   },
-  { id: 'tibet', name: 'Monastery of Nine Winds', place: 'Tibet', mood: 'Ice sliding and light beams.', levels: [], playable: false },
+  {
+    id: 'tibet',
+    name: 'Monastery of Nine Winds',
+    place: 'Tibet',
+    mood: 'Prayer flags, blue-white snow, gold roofs and wind.',
+    levels: TIBET,
+    playable: true,
+  },
   { id: 'india', name: 'Bharat Expedition', place: 'India', mood: 'Stepwells, forts and monsoon channels.', levels: [], playable: false },
   { id: 'vault', name: 'The Obsidian Vault', place: 'Finale', mood: 'Every tool, every world.', levels: [], playable: false },
 ];

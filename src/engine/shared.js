@@ -72,9 +72,11 @@ export function objectCanEnter(s, x, y, o) {
 export function enemyCanEnter(s, x, y, e) {
   if (!inb(s, x, y)) return false;
   const i = idx(s, x, y);
-  let f = effFloor(s, i);
-  if (e && e.t === 'spirit' && (f === 'water' || f === 'ice')) f = 'floor';
-  if (!ENEMY_FLOORS.has(f)) return false;
+  const f = effFloor(s, i);
+  // Ice spirits only drift over water and ice.
+  if (e && e.t === 'spirit') {
+    if (f !== 'water' && f !== 'ice') return false;
+  } else if (!ENEMY_FLOORS.has(f)) return false;
   if (s.obj[i] || enemyAt(s, x, y) || partnerAt(s, x, y) || bossAt(s, x, y)) return false;
   return true;
 }
