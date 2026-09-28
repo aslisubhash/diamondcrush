@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#151a12">
+  <meta name="description" content="Diamond Crush: a grid-based temple-crawl gem hunt. Dig, push boulders, dodge falling rocks and collect every gem.">
+  <title>Diamond Crush</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Title -->
+    <section id="screen-title" class="screen active" aria-label="Title">
+      <canvas id="title-art" aria-hidden="true"></canvas>
+      <div class="title-block">
+        <h1 class="logo"><span>DIAMOND</span><span>CRUSH</span></h1>
+        <p class="subtitle">The Lost Expeditions</p>
+      </div>
+      <button id="tap-begin" class="tap-begin">Tap to begin the expedition</button>
+      <p class="fineprint">Arrow keys / WASD · Space: tool · Z: rewind · M: rock-fall preview · Esc: pause</p>
+    </section>
+
+    <!-- Story comic -->
+    <section id="screen-comic" class="screen" aria-label="Story">
+      <div id="comic-panels" class="comic"></div>
+      <div class="comic-bar">
+        <button id="comic-skip" class="btn ghost">Skip</button>
+        <button id="comic-next" class="btn primary">Next</button>
+      </div>
+    </section>
+
+    <!-- Hub / world map -->
+    <section id="screen-map" class="screen" aria-label="Expedition map">
+      <header class="hub-top">
+        <div class="wallet">
+          <span class="chip" title="Gold coins"><i class="ico coin"></i><b id="hub-coins">0</b></span>
+          <span class="chip" title="Insight (spent on clues)"><i class="ico insight"></i><b id="hub-insight">0</b></span>
+          <span class="chip" title="Blue gems collected"><i class="ico gem"></i><b id="hub-gems">0</b></span>
+          <span class="chip" title="Stars"><i class="ico star"></i><b id="hub-stars">0</b></span>
+        </div>
+        <button id="hub-settings" class="icon-btn" aria-label="Settings">⚙</button>
+      </header>
+      <nav id="world-tabs" class="world-tabs" aria-label="Worlds"></nav>
+      <div id="world-view" class="world-view"></div>
+      <footer class="hub-bottom">
+        <button id="hub-shop" class="btn primary">Merchant's tent</button>
+        <button id="hub-story" class="btn ghost">Story</button>
+      </footer>
+    </section>
+
+    <!-- In-game -->
+    <section id="screen-game" class="screen" aria-label="Game">
+      <header id="topbar">
+        <div class="hud-left">
+          <span id="hud-gems" class="hud-gems"><i class="ico gem"></i><b>0</b><small>/0</small></span>
+          <span id="hud-red" class="hud-red" title="Red gem"><i class="ico red"></i></span>
+          <span id="hud-keys" class="hud-keys"></span>
+        </div>
+        <div class="hud-right">
+          <span id="hud-hearts" class="hud-hearts" aria-label="Hearts"></span>
+          <button id="hud-lantern" class="icon-btn small" aria-label="Clue lantern">🏮</button>
+          <button id="hud-pause" class="icon-btn small" aria-label="Pause">❚❚</button>
+        </div>
+      </header>
+      <div id="game-window">
+        <canvas id="game"></canvas>
+        <div id="stage-banner" class="stage-banner"></div>
+        <div id="tip" class="tip" role="status"></div>
+        <div id="toast" class="toast" role="status"></div>
+        <div id="swipe-buttons" class="swipe-buttons">
+          <button class="sb sb-rewind" data-act="rewind" aria-label="Rewind">⟲</button>
+          <button class="sb sb-tool" data-act="tool" aria-label="Use tool">A</button>
+        </div>
+        <div id="autoplay-badge" class="autoplay-badge">Spirit guide is showing the way… <button id="stop-guide" class="btn tiny">Stop</button></div>
+      </div>
+      <div id="divider" class="divider" aria-hidden="true"><span></span></div>
+      <div id="deck" class="deck"></div>
+    </section>
+
+    <div id="modal" class="modal" role="dialog" aria-modal="true"></div>
+  </div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
