@@ -369,6 +369,6 @@ export const BAVARIA = [
       { x: 1, y: 1, text: 'The Baron charges in a straight line. Stand under a pillar and dodge' },
       { x: 1, y: 3, text: 'A stunned Baron cannot dodge a falling boulder' },
     ],
-    solution: 'RRDRRUDUDDLLLUURRDDRRRUDDULDUUUDLULUURRU',
+    solution: 'RRDRRUDUDDLLLUURRDDRRR.DDULDUUUDL.LUURRU',
   },
 ];

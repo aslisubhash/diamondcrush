@@ -3,27 +3,47 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
-  <meta name="theme-color" content="#151a12">
+  <meta name="theme-color" content="#0d0a14">
   <meta name="description" content="Diamond Crush: a grid-based temple-crawl gem hunt. Dig, push boulders, dodge falling rocks and collect every gem.">
   <title>Diamond Crush</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="preload" href="fonts/Cinzel-63551c.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="fonts/CinzelDecorative-655d15.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="fonts/fonts.css">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- Shared gold-leaf gradient used by every interface icon. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <linearGradient id="gild" x1="0" y1="0" x2="0.35" y2="1">
+        <stop offset="0" stop-color="#fff4c8"/>
+        <stop offset="0.3" stop-color="#f0cd6a"/>
+        <stop offset="0.62" stop-color="#c38f2a"/>
+        <stop offset="0.85" stop-color="#8a5b12"/>
+        <stop offset="1" stop-color="#d9b04e"/>
+      </linearGradient>
+      <linearGradient id="ruby" x1="0" y1="0" x2="0.4" y2="1">
+        <stop offset="0" stop-color="#ffb3be"/>
+        <stop offset="0.35" stop-color="#ef2c4a"/>
+        <stop offset="0.8" stop-color="#8e0a22"/>
+        <stop offset="1" stop-color="#c81d3a"/>
+      </linearGradient>
+    </defs>
+  </svg>
   <div id="app">
     <!-- Title -->
     <section id="screen-title" class="screen active" aria-label="Title">
       <canvas id="title-art" aria-hidden="true"></canvas>
       <div class="title-block">
-        <h1 class="logo"><span>DIAMOND</span><span>CRUSH</span></h1>
+        <canvas id="title-gem" class="title-gem" aria-hidden="true"></canvas>
+        <h1 class="logo"><span class="l1">Diamond</span><span class="l2">Crush</span></h1>
+        <div class="flourish" aria-hidden="true"><i></i><b></b><i></i></div>
         <p class="subtitle">The Lost Expeditions</p>
       </div>
-      <button id="tap-begin" class="tap-begin">Tap to begin the expedition</button>
-      <p class="fineprint">Arrow keys / WASD · Space: tool · Z: rewind · M: rock-fall preview · Esc: pause</p>
+      <button id="tap-begin" class="tap-begin"><span>Begin the Expedition</span></button>
+      <p class="fineprint">Arrow keys or WASD to move · Space for tools · Z to rewind · Esc to pause</p>
     </section>
 
     <!-- Story comic -->
@@ -44,7 +64,7 @@
           <span class="chip" title="Blue gems collected"><i class="ico gem"></i><b id="hub-gems">0</b></span>
           <span class="chip" title="Stars"><i class="ico star"></i><b id="hub-stars">0</b></span>
         </div>
-        <button id="hub-settings" class="icon-btn" aria-label="Settings">⚙</button>
+        <button id="hub-settings" class="icon-btn" aria-label="Settings" data-icon="gear"></button>
       </header>
       <nav id="world-tabs" class="world-tabs" aria-label="Worlds"></nav>
       <div id="world-view" class="world-view"></div>
@@ -64,8 +84,8 @@
         </div>
         <div class="hud-right">
           <span id="hud-hearts" class="hud-hearts" aria-label="Hearts"></span>
-          <button id="hud-lantern" class="icon-btn small" aria-label="Clue lantern">🏮</button>
-          <button id="hud-pause" class="icon-btn small" aria-label="Pause">❚❚</button>
+          <button id="hud-lantern" class="icon-btn small" aria-label="Clue lantern" data-icon="lantern"></button>
+          <button id="hud-pause" class="icon-btn small" aria-label="Pause" data-icon="pause"></button>
         </div>
       </header>
       <div id="game-window">
@@ -74,10 +94,11 @@
         <div id="tip" class="tip" role="status"></div>
         <div id="toast" class="toast" role="status"></div>
         <div id="swipe-buttons" class="swipe-buttons">
-          <button class="sb sb-rewind" data-act="rewind" aria-label="Rewind">⟲</button>
-          <button class="sb sb-tool" data-act="tool" aria-label="Use tool">A</button>
+          <button class="sb sb-rewind" data-act="rewind" aria-label="Rewind" data-icon="rewind"></button>
+          <button class="sb sb-tool" data-act="tool" aria-label="Use tool" data-icon="hand"></button>
         </div>
-        <div id="autoplay-badge" class="autoplay-badge">Spirit guide is showing the way… <button id="stop-guide" class="btn tiny">Stop</button></div>
+        <div id="gesture-hint" class="gesture-hint"></div>
+        <div id="autoplay-badge" class="autoplay-badge">The spirit guide shows the way <button id="stop-guide" class="btn tiny">Stop</button></div>
       </div>
       <div id="divider" class="divider" aria-hidden="true"><span></span></div>
       <div id="deck" class="deck"></div>

@@ -54,7 +54,7 @@ export function createState(level, opts = {}) {
     chan: {},
     kolamDone: {},
     chanStart: {},
-    rules: { crush: diff.crush, wobble: diff.wobble },
+    rules: { crush: diff.crush, rockCrush: diff.rockCrush, wobble: diff.wobble },
     status: 'play', // play | won | dead
     exitKind: null, // 'exit' | 'secret'
     lastHurt: '',
@@ -255,6 +255,11 @@ function push(s, o, tx, ty, dir, prevWind) {
   const h = s.hero;
   const [dx, dy] = DIRS[dir];
   if (o.st === 'fall' || o.slide) return false;
+  // Gravity wins: rocks cannot be lifted, only rolled sideways or dropped.
+  if (dir === 'U' && FALLERS.has(o.t)) {
+    emit(s, 'tooHeavy', tx, ty, { obj: o.t });
+    return false;
+  }
   const fx = tx + dx;
   const fy = ty + dy;
   const gauntlet = h.tools.includes('gauntlet');
@@ -870,7 +875,10 @@ export function physics(s, moved = new Set()) {
       if (bodyAt(s, x, y + 1)) {
         if (wasMoving) {
           emit(s, 'land', x, y, { obj: o.t, heavy: o.t !== 'gem' });
-          hurt(s, s.rules.crush, `Crushed by ${OBJECT_NAMES[o.t]}`);
+          // A falling rock is fatal (the original's rule); gems and snow sting.
+          const rock = o.t === 'boulder' || o.t === 'stone';
+          const dmg = rock ? (s.rules.rockCrush === 'fatal' ? s.hero.hearts : s.rules.rockCrush) : s.rules.crush;
+          hurt(s, dmg, `Crushed by ${OBJECT_NAMES[o.t]}`);
           emit(s, 'crush', x, y + 1, { obj: o.t });
         }
         if (o.t === 'snow' && wasMoving) {
@@ -890,6 +898,12 @@ export function physics(s, moved = new Set()) {
         }
         o.st = 'rest';
         continue;
+      }
+      // Clay pots shatter under anything heavy falling onto them.
+      const pot = s.obj[bi];
+      if (pot && pot.t === 'pot' && wasMoving && HEAVY.has(o.t)) {
+        s.obj[bi] = null;
+        emit(s, 'shatter', x, y + 1, { obj: 'pot' });
       }
       const e = enemyAt(s, x, y + 1);
       if (e) {

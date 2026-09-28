@@ -32,7 +32,10 @@ export function defaultProfile() {
 
 export function defaultSettings() {
   return {
-    control: 'dpad', // dpad | joystick | keypad | swipe
+    control: 'dpad', // dpad | joystick | keypad | swipe (no buttons)
+    controlsChosen: false,
+    floatButtons: false,
+    lastDeck: 'dpad',
     leftHanded: false,
     split: 0.62,
     buttonScale: 1,

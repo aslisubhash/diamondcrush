@@ -386,6 +386,20 @@ export function drawHeartStone(ctx, s, t) {
   poly(ctx, [s * 0.5, s * 0.22, s * 0.62, s * 0.34, s * 0.5, s * 0.46, s * 0.38, s * 0.34]);
 }
 
+export function drawPot(ctx, s) {
+  shadow(ctx, s, 0.3);
+  ctx.fillStyle = '#a4502e';
+  ctx.beginPath();
+  ctx.ellipse(s * 0.5, s * 0.58, s * 0.32, s * 0.3, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#7a3a20';
+  ctx.fillRect(s * 0.34, s * 0.2, s * 0.32, s * 0.12);
+  ctx.fillStyle = '#f2c230';
+  ctx.fillRect(s * 0.22, s * 0.52, s * 0.56, s * 0.05);
+  ctx.fillStyle = '#157a7a';
+  for (let k = 0; k < 3; k++) circle(ctx, s * (0.35 + k * 0.15), s * 0.66, s * 0.03);
+}
+
 export function drawSnow(ctx, s) {
   ctx.fillStyle = '#f4f8fb';
   circle(ctx, s * 0.5, s * 0.5, s * 0.36);

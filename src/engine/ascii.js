@@ -7,7 +7,7 @@ const FLOOR_CH = {
   door: 'D', lever: 'l', lair: 'L', ice: 'I', wind: 'w', blade: '|', jet: 'J', lamp: '@',
   vent: 'V', grass: '%', switch: '!', den: ':',
 };
-const OBJ_CH = { boulder: 'B', stone: 'R', crate: 'c', gem: 'G', red: '*', key: 'K', tool: 'h', fruit: 'f', snow: 'o', heart: 'Q' };
+const OBJ_CH = { boulder: 'B', stone: 'R', crate: 'c', gem: 'G', red: '*', key: 'K', tool: 'h', fruit: 'f', snow: 'o', heart: 'Q', pot: 'u', mirror: 'm' };
 const ENEMY_CH = {
   snake: 'S', scarab: 'A', monkey: 'M', bat: 'x', knight: 'n', rat: 'r', yeti: 'y', spirit: 'j',
   cobra: 'k', langur: 'z', thug: 'u', tiger: 't', echo: 'e',

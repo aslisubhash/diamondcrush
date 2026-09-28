@@ -138,18 +138,45 @@ export class Input {
 
   // ---------- swipes on the game window ----------
 
+  // Swipes move. With gestures on (no on-screen buttons): a quick tap uses
+  // the tool, a two-finger tap rewinds, and a long press holds the
+  // rock-fall preview.
   bindSwipe(el) {
     let start = null;
+    const touches = new Map();
+    let multi = null;
+    let hold = 0;
     el.addEventListener('pointerdown', (e) => {
       if (!this.a.active()) return;
-      start = { x: e.clientX, y: e.clientY, id: e.pointerId, dir: null };
+      touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touches.size === 2) {
+        // Second finger: this is a two-finger tap unless someone drags.
+        multi = { at: performance.now(), moved: false };
+        if (start && start.dir) this.release(start.dir, 's');
+        start = null;
+        clearTimeout(hold);
+        return;
+      }
+      start = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, id: e.pointerId, dir: null, at: performance.now(), held: false };
       el.setPointerCapture(e.pointerId);
+      clearTimeout(hold);
+      if (this.a.gestures?.()) {
+        hold = setTimeout(() => {
+          if (start && !start.dir) {
+            start.held = true;
+            this.a.preview(true);
+          }
+        }, 450);
+      }
     });
     el.addEventListener('pointermove', (e) => {
-      if (!start || e.pointerId !== start.id) return;
+      const t = touches.get(e.pointerId);
+      if (multi && t && Math.hypot(e.clientX - t.x, e.clientY - t.y) > 24) multi.moved = true;
+      if (!start || e.pointerId !== start.id || start.held) return;
       const dx = e.clientX - start.x;
       const dy = e.clientY - start.y;
       if (Math.hypot(dx, dy) < 22) return;
+      clearTimeout(hold);
       const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'R' : 'L') : (dy > 0 ? 'D' : 'U');
       if (dir !== start.dir) {
         if (start.dir) this.release(start.dir, 's');
@@ -161,8 +188,21 @@ export class Input {
       start.y = e.clientY;
     });
     const end = (e) => {
+      touches.delete(e.pointerId);
+      if (multi) {
+        if (touches.size === 0) {
+          const quick = performance.now() - multi.at < 400 && !multi.moved;
+          multi = null;
+          if (quick && this.a.gestures?.() && this.a.active()) this.a.rewind();
+        }
+        return;
+      }
       if (!start || e.pointerId !== start.id) return;
+      clearTimeout(hold);
       if (start.dir) this.release(start.dir, 's');
+      else if (start.held) this.a.preview(false);
+      else if (e.type === 'pointerup' && this.a.gestures?.() && performance.now() - start.at < 300 &&
+        Math.hypot(e.clientX - start.x0, e.clientY - start.y0) < 16) this.a.tool();
       start = null;
     };
     el.addEventListener('pointerup', end);

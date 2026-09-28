@@ -4,6 +4,7 @@
 import * as S from './sprites.js';
 import * as S2 from './sprites2.js';
 import { PALETTES, COLORS } from './palette.js';
+import { polished } from './premium.js';
 import { KEY_SHAPES } from '../engine/constants.js';
 import { gateOpen, exitOpen, spikePhase, predictFalls, wellWet, lampDir, convDir } from '../engine/sim.js';
 
@@ -527,7 +528,7 @@ export class Renderer {
           ctx.save();
           ctx.translate(pp.x * T, pp.y * T);
           ctx.globalAlpha = 0.85;
-          S2.drawExplorer(ctx, T, s.partner.who, s.partner.dir, 0, {});
+          polished(ctx, `hero:${s.partner.who}${s.partner.dir}0`, T, (c, n) => S2.drawExplorer(c, n, s.partner.who, s.partner.dir, 0, {}));
           ctx.restore();
         },
       });
@@ -585,6 +586,7 @@ export class Renderer {
       case 'mirror': S2.drawMirror(ctx, T, o.o); break;
       case 'heart': S2.drawHeartStone(ctx, T, tsec); break;
       case 'snow': S2.drawSnow(ctx, T); break;
+      case 'pot': S2.drawPot(ctx, T); break;
       case 'gem': S.drawGem(ctx, T, false, tsec + p.x * 0.7 + p.y * 1.3); break;
       case 'red': {
         const g = ctx.createRadialGradient(T / 2, T / 2, 0, T / 2, T / 2, T * 0.6);
@@ -603,9 +605,11 @@ export class Renderer {
         ctx.beginPath();
         ctx.arc(T / 2, T / 2, T * 0.45, 0, Math.PI * 2);
         ctx.fill();
-        if (o.tool === 'grapple') S.drawGrapple(ctx, T);
-        else if (o.tool === 'hammer') S.drawHammer(ctx, T);
-        else S2.drawToolSprite(ctx, T, o.tool);
+        polished(ctx, `tool:${o.tool}`, T, (c, n) => {
+          if (o.tool === 'grapple') S.drawGrapple(c, n);
+          else if (o.tool === 'hammer') S.drawHammer(c, n);
+          else S2.drawToolSprite(c, n, o.tool);
+        });
         break;
       }
       case 'fruit': S.drawFruit(ctx, T); break;
@@ -618,18 +622,19 @@ export class Renderer {
     const frame = Math.floor(tsec * 4 + e.id) % 2;
     ctx.save();
     ctx.translate(p.x * T, p.y * T);
-    if (e.t === 'snake') S.drawSnake(ctx, T, e.dir, frame);
-    else if (e.t === 'scarab') S.drawScarab(ctx, T, frame);
-    else if (e.t === 'monkey') S.drawMonkey(ctx, T, frame, e.carrying, e.calm);
-    else if (e.t === 'bat') S2.drawBat(ctx, T, frame);
-    else if (e.t === 'knight') S2.drawKnight(ctx, T, e.dir, frame, !!e.charge);
-    else if (e.t === 'rat') S2.drawRat(ctx, T, e.dir, frame);
-    else if (e.t === 'yeti') S2.drawYeti(ctx, T, frame, !!e.slide);
+    const pose = (key, fn) => polished(ctx, `${e.t}:${key}`, T, fn);
+    if (e.t === 'snake') pose(`${e.dir}${frame}`, (c, n) => S.drawSnake(c, n, e.dir, frame));
+    else if (e.t === 'scarab') pose(frame, (c, n) => S.drawScarab(c, n, frame));
+    else if (e.t === 'monkey') pose(`${frame}${e.carrying ? 1 : 0}${e.calm ? 1 : 0}`, (c, n) => S.drawMonkey(c, n, frame, e.carrying, e.calm));
+    else if (e.t === 'bat') pose(frame, (c, n) => S2.drawBat(c, n, frame));
+    else if (e.t === 'knight') pose(`${e.dir}${frame}${e.charge ? 1 : 0}`, (c, n) => S2.drawKnight(c, n, e.dir, frame, !!e.charge));
+    else if (e.t === 'rat') pose(`${e.dir}${frame}`, (c, n) => S2.drawRat(c, n, e.dir, frame));
+    else if (e.t === 'yeti') pose(`${frame}${e.slide ? 1 : 0}`, (c, n) => S2.drawYeti(c, n, frame, !!e.slide));
     else if (e.t === 'spirit') S2.drawSpirit(ctx, T, tsec);
-    else if (e.t === 'cobra') S2.drawCobra(ctx, T, e.dir, e.warn);
-    else if (e.t === 'langur') S2.drawLangur(ctx, T, frame);
-    else if (e.t === 'thug') S2.drawThug(ctx, T, e.dir, frame);
-    else if (e.t === 'tiger') S2.drawTiger(ctx, T, e.dir, frame, e.hunt);
+    else if (e.t === 'cobra') pose(`${e.dir}${e.warn ? 1 : 0}`, (c, n) => S2.drawCobra(c, n, e.dir, e.warn));
+    else if (e.t === 'langur') pose(frame, (c, n) => S2.drawLangur(c, n, frame));
+    else if (e.t === 'thug') pose(`${e.dir}${frame}`, (c, n) => S2.drawThug(c, n, e.dir, frame));
+    else if (e.t === 'tiger') pose(`${e.dir}${frame}${e.hunt ? 1 : 0}`, (c, n) => S2.drawTiger(c, n, e.dir, frame, e.hunt));
     else if (e.t === 'echo') S2.drawEcho(ctx, T, e.dir, frame, this.state.hero.who);
     const st = this.state;
     if (st.freezeUntil && st.tick <= st.freezeUntil && e.t !== 'echo') {
@@ -659,7 +664,16 @@ export class Renderer {
       ctx.translate(dx * T * 0.12, dy * T * 0.12);
     }
     const blink = s.hero.invul > 0 && Math.floor(now / 80) % 2 === 0;
-    if (!blink) S2.drawExplorer(ctx, T, s.hero.who, s.hero.dir, frame, { hurt: now < this.heroHurtUntil });
+    if (!blink) {
+      const who = s.hero.who;
+      polished(ctx, `hero:${who}${s.hero.dir}${frame}`, T, (c, n) => S2.drawExplorer(c, n, who, s.hero.dir, frame, {}));
+      if (now < this.heroHurtUntil) {
+        ctx.fillStyle = 'rgba(255,60,60,0.4)';
+        ctx.beginPath();
+        ctx.arc(T / 2, T / 2, T * 0.42, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
     ctx.restore();
   }
 
@@ -682,7 +696,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
     const fk = [];
     ctx.textAlign = 'center';
-    ctx.font = `bold ${Math.round(T * 0.32)}px "Press Start 2P", monospace`;
+    ctx.font = `800 ${Math.round(T * 0.34)}px Cinzel, Georgia, serif`;
     for (const f of this.floaters) {
       f.t += dt;
       if (f.t > 0.9) continue;

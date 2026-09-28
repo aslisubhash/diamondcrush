@@ -1,6 +1,7 @@
 import { ANGKOR } from './angkor.js';
 import { BAVARIA } from './bavaria.js';
 import { TIBET } from './tibet.js';
+import { INDIA } from './india.js';
 import { parseLevel } from '../engine/level.js';
 
 export const WORLDS = [
@@ -28,7 +29,14 @@ export const WORLDS = [
     levels: TIBET,
     playable: true,
   },
-  { id: 'india', name: 'Bharat Expedition', place: 'India', mood: 'Stepwells, forts and monsoon channels.', levels: [], playable: false },
+  {
+    id: 'india',
+    name: 'Bharat Expedition',
+    place: 'India',
+    mood: 'Warm sandstone, marigold, peacock blues and monsoon greens.',
+    levels: INDIA,
+    playable: true,
+  },
   { id: 'vault', name: 'The Obsidian Vault', place: 'Finale', mood: 'Every tool, every world.', levels: [], playable: false },
 ];
 

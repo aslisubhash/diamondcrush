@@ -56,10 +56,10 @@ export const TOOLS = {
 };
 
 export const DIFFICULTIES = {
-  explorer: { label: 'Explorer', hearts: 5, rewind: Infinity, crush: 1, wobble: true, bgScale: 1.25, hint: 'Casual: 5 hearts, unlimited rewind, slower hazards' },
-  classic: { label: 'Classic', hearts: 3, rewind: 10, crush: 1, wobble: true, bgScale: 1, hint: 'The original feel: 3 hearts, 10 rewinds' },
-  hunter: { label: 'Relic Hunter', hearts: 2, rewind: 3, crush: 2, wobble: true, bgScale: 0.85, hint: 'Hard: 2 hearts, crushes cost 2, faster hazards' },
-  purist: { label: 'Purist', hearts: 3, rewind: 0, crush: 1, wobble: false, bgScale: 1, hint: 'No rewind, no wobble warning, no clues' },
+  explorer: { label: 'Explorer', hearts: 5, rewind: Infinity, crush: 1, rockCrush: 2, wobble: true, bgScale: 1.25, hint: 'Casual: 5 hearts, unlimited rewind; a falling rock costs 2 hearts' },
+  classic: { label: 'Classic', hearts: 3, rewind: 10, crush: 1, rockCrush: 'fatal', wobble: true, bgScale: 1, hint: 'The original feel: 3 hearts, 10 rewinds; falling rocks are fatal' },
+  hunter: { label: 'Relic Hunter', hearts: 2, rewind: 3, crush: 2, rockCrush: 'fatal', wobble: true, bgScale: 0.85, hint: 'Hard: 2 hearts, crushes cost 2, faster hazards' },
+  purist: { label: 'Purist', hearts: 3, rewind: 0, crush: 1, rockCrush: 'fatal', wobble: false, bgScale: 1, hint: 'No rewind, no wobble warning, no clues' },
 };
 
 export const ENEMY_NAMES = {

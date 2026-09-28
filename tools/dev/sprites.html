@@ -1,0 +1,22 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Sprite sheet</title>
+<style>body{margin:0;background:#120e0a;color:#eee;font-family:sans-serif}canvas{display:block}</style></head>
+<body><canvas id="c" width="1000" height="560"></canvas>
+<script type="module">
+import * as S from '../../src/render/sprites.js';
+import * as S2 from '../../src/render/sprites2.js';
+import { PALETTES } from '../../src/render/palette.js';
+import { polished } from '../../src/render/premium.js';
+const c = document.getElementById('c'); const ctx = c.getContext('2d');
+const pal = PALETTES.angkor;
+const at = (x, y, s, fn) => { ctx.save(); ctx.translate(x, y); fn(s); ctx.restore(); };
+// floor strip
+for (let i = 0; i < 10; i++) for (let j = 0; j < 5; j++) at(i*100, j*100 + 60, 100, (s) => (j === 0 ? S.drawWall(ctx, s, i, j, pal, true, false) : S.drawFloor(ctx, s, i, j, pal)));
+const items = [
+  (s) => S.drawGem(ctx, s, false, 0.3), (s) => S.drawGem(ctx, s, true, 0.3), (s) => S.drawBoulder(ctx, s, false),
+  (s) => S.drawBoulder(ctx, s, true), (s) => S.drawCrate(ctx, s), (s) => S.drawKey(ctx, s, 'gold', 'star'),
+  (s) => polished(ctx, 'h'+s, s, (c, n) => S.drawHero(c, n, 'D', 0)), (s) => S.drawExit(ctx, s, true, 0.4, pal), (s) => S.drawGem(ctx, s, false, 1.1), (s) => polished(ctx, 'c'+s, s, (c, n) => S2.drawCobra(c, n, 'L', false)),
+];
+items.forEach((f, i) => at(i * 100, 160, 100, f));
+items.forEach((f, i) => at(i * 48 + 10, 300, 48, f));
+items.forEach((f, i) => at(i * 180 % 900 + 10, 360 + Math.floor(i/5)*0, 180, f));
+</script></body></html>

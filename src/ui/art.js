@@ -2,6 +2,7 @@
 // own sprite functions.
 import * as S from '../render/sprites.js';
 import { drawToolSprite } from '../render/sprites2.js';
+import { drawGemHQ } from '../render/premium.js';
 import { PALETTES, COLORS } from '../render/palette.js';
 
 const pal = PALETTES.angkor;
@@ -25,7 +26,12 @@ function tile(ctx, T, x, y, fn) {
 export function startTitleArt(canvas) {
   let raf = 0;
   let ctx = fitCanvas(canvas);
-  const onResize = () => { ctx = fitCanvas(canvas); };
+  const emblem = document.getElementById('title-gem');
+  let ectx = emblem ? fitCanvas(emblem) : null;
+  const onResize = () => {
+    ctx = fitCanvas(canvas);
+    if (emblem) ectx = fitCanvas(emblem);
+  };
   window.addEventListener('resize', onResize);
   const draw = (now) => {
     const t = now / 1000;
@@ -71,6 +77,7 @@ export function startTitleArt(canvas) {
     ctx.translate(W / 2 - hs / 2, H * 0.55);
     S.drawHero(ctx, hs, 'D', Math.floor(t * 2) % 2 && false);
     ctx.restore();
+    if (ectx) drawEmblem(ectx, emblem.width, t);
     raf = requestAnimationFrame(draw);
   };
   raf = requestAnimationFrame(draw);
@@ -78,6 +85,39 @@ export function startTitleArt(canvas) {
     cancelAnimationFrame(raf);
     window.removeEventListener('resize', onResize);
   };
+}
+
+// The title emblem: a great sapphire turning slowly in shafts of gold light.
+function drawEmblem(ctx, n, t) {
+  ctx.clearRect(0, 0, n, n);
+  const c = n / 2;
+  ctx.save();
+  ctx.translate(c, c);
+  ctx.rotate(t * 0.15);
+  for (let i = 0; i < 12; i++) {
+    ctx.rotate(Math.PI / 6);
+    const g = ctx.createLinearGradient(0, 0, n * 0.5, 0);
+    g.addColorStop(0, 'rgba(255,225,150,0.35)');
+    g.addColorStop(1, 'rgba(255,225,150,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(n * 0.5, -n * (i % 2 ? 0.03 : 0.06));
+    ctx.lineTo(n * 0.5, n * (i % 2 ? 0.03 : 0.06));
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  const halo = ctx.createRadialGradient(c, c, 0, c, c, n * 0.42);
+  halo.addColorStop(0, 'rgba(120,190,255,0.45)');
+  halo.addColorStop(1, 'rgba(120,190,255,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(0, 0, n, n);
+  const s = n * 0.72;
+  ctx.save();
+  ctx.translate((n - s) / 2, (n - s) / 2 + Math.sin(t * 1.4) * n * 0.02);
+  drawGemHQ(ctx, s, 'blue', t);
+  ctx.restore();
 }
 
 export const COMIC = [

@@ -11,6 +11,8 @@ import { COLORS } from './render/palette.js';
 import { loadAll, saveAll, UPGRADES, upgradeLevel, insightCap, stepMs } from './save.js';
 import { startTitleArt, COMIC, drawComic, drawToolIcon } from './ui/art.js';
 import { currentTool } from './engine/sim.js';
+import { icon } from './ui/icons.js';
+import { iconURL } from './render/premium.js';
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -69,7 +71,7 @@ function toast(msg, ms = 2200) {
 let tipTimer = 0;
 function tip(msg) {
   const el = $('#tip');
-  el.textContent = msg;
+  el.innerHTML = `${icon('scroll')}<span>${esc(msg)}</span>`;
   el.classList.add('show');
   clearTimeout(tipTimer);
   tipTimer = setTimeout(() => el.classList.remove('show'), 4200);
@@ -100,8 +102,43 @@ function initTitle() {
   $('#tap-begin').addEventListener('click', () => {
     audio.init();
     audio.sfx('ui');
-    if (!profile.seenIntro) showComic(true);
-    else showMap();
+    const go = () => (profile.seenIntro ? showMap() : showComic(true));
+    if (!settings.controlsChosen) chooseControls(go);
+    else go();
+  });
+}
+
+// Asked once when the game starts (and available again in Settings):
+// on-screen buttons are optional.
+const CONTROL_CHOICES = [
+  { id: 'deck', pic: 'up', name: 'Royal control deck', desc: 'On-screen D-pad and tool buttons below the temple view.' },
+  { id: 'gestures', pic: 'hand', name: 'Gestures only', desc: 'No buttons. Swipe to move, tap for your tool, two-finger tap to rewind, hold to preview rockfalls.' },
+  { id: 'keys', pic: 'map', name: 'Keyboard or gamepad', desc: 'No buttons on screen. Arrows or WASD, Space for tools, Z to rewind.' },
+];
+
+function applyControlChoice(id) {
+  if (id === 'deck') {
+    if (!['dpad', 'joystick', 'keypad'].includes(settings.control)) settings.control = 'dpad';
+  } else {
+    settings.control = 'swipe';
+    settings.floatButtons = false;
+  }
+  settings.controlsChosen = true;
+  save();
+}
+
+function chooseControls(then) {
+  const el = openModal(`<h2>Choose your controls</h2>
+    <p class="muted" style="text-align:center">Buttons are optional. You can change this any time in Settings.</p>
+    <div class="choices">${CONTROL_CHOICES.map((c) => `<button class="choice" data-c="${c.id}">
+      <span class="pic">${icon(c.pic)}</span><span><b>${esc(c.name)}</b><small>${esc(c.desc)}</small></span></button>`).join('')}</div>`,
+  { onClose: () => { if (!settings.controlsChosen) applyControlChoice('deck'); then(); } });
+  el.querySelectorAll('[data-c]').forEach((b) => {
+    b.onclick = () => {
+      audio.sfx('ui');
+      applyControlChoice(b.dataset.c);
+      closeModal();
+    };
   });
 }
 
@@ -221,7 +258,7 @@ function renderHub() {
   $('#hub-gems').textContent = t.gems;
   $('#hub-stars').textContent = t.stars;
   $('#world-tabs').innerHTML = WORLDS.map((w) =>
-    `<button data-w="${w.id}" class="${w.id === selectedWorld ? 'on' : ''} ${worldUnlocked(w) ? '' : 'locked'}">${esc(w.name)}</button>`).join('');
+    `<button data-w="${w.id}" class="${w.id === selectedWorld ? 'on' : ''} ${worldUnlocked(w) ? '' : 'locked'}">${worldUnlocked(w) ? '' : icon('lock')}${esc(w.name)}</button>`).join('');
   $('#world-tabs').querySelectorAll('button').forEach((b) => {
     b.onclick = () => {
       selectedWorld = b.dataset.w;
@@ -262,8 +299,9 @@ function renderHub() {
   view.innerHTML = `<div class="world-head"><h2>World ${num} · ${esc(w.name)}</h2><p>${esc(w.place)} · ${esc(w.mood)}</p></div>
     <div class="trail" style="height:${height}px">
       <svg viewBox="0 0 100 ${height}" preserveAspectRatio="none">
-        <path d="${pathD}" fill="none" stroke="#6d5d3b" stroke-width="2.4" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" style="stroke-width:5px"/>
-        <path d="${branches}" fill="none" stroke="#a8122b" stroke-width="2" stroke-dasharray="2 4" vector-effect="non-scaling-stroke" style="stroke-width:4px"/>
+        <path d="${pathD}" fill="none" stroke="#000" stroke-opacity="0.55" vector-effect="non-scaling-stroke" style="stroke-width:9px" stroke-linecap="round"/>
+        <path d="${pathD}" fill="none" stroke="#d9b04e" stroke-dasharray="1 9" vector-effect="non-scaling-stroke" style="stroke-width:5px" stroke-linecap="round"/>
+        <path d="${branches}" fill="none" stroke="#e0223f" stroke-opacity="0.8" stroke-dasharray="1 8" vector-effect="non-scaling-stroke" style="stroke-width:4px" stroke-linecap="round"/>
       </svg>
       ${nodes.map((n) => nodeHtml(n, firstOpen)).join('')}
     </div>`;
@@ -292,7 +330,7 @@ function nodeHtml(n, firstOpen) {
   if (lvl.boss) cls.push('boss');
   if (n.id === firstOpen || (!firstOpen && lvl.boss && open && !rec?.done)) cls.push('current');
   const label = lvl.secret ? (open ? lvl.name : '???') : lvl.name;
-  const num = lvl.boss ? '☠' : lvl.secret ? (open ? '★' : '?') : n.id.split('-')[1];
+  const num = lvl.boss ? icon('skull') : lvl.secret ? icon(open ? 'star' : 'question') : !open ? icon('lock') : n.id.split('-')[1];
   const stars = (rec?.stars || [false, false, false]).map((s) => `<i class="ico star ${s ? '' : 'off'}"></i>`).join('');
   return `<button class="${cls.join(' ')}" data-id="${n.id}" style="left:${n.x}%;top:${n.y}px">
     <span class="disc"><span>${num}</span></span>
@@ -302,7 +340,7 @@ function nodeHtml(n, firstOpen) {
 
 function stageCard(level) {
   if (!isUnlocked(level)) {
-    const el = openModal(`<h2>${level.secret ? '???' : esc(level.name)}</h2><p>🔒 ${esc(lockReason(level))}</p>
+    const el = openModal(`<h2>${level.secret ? '???' : esc(level.name)}</h2><p class="lock-line">${icon('lock')}<span>${esc(lockReason(level))}</span></p>
       <div class="row"><button class="btn" data-x="close">Close</button></div>`);
     el.querySelector('[data-x=close]').onclick = closeModal;
     return;
@@ -320,9 +358,9 @@ function stageCard(level) {
         <span>Best moves</span><b>${rec?.bestMoves ?? '—'}</b>
         <span>Best gems</span><b>${rec?.gems ?? 0}</b>
         <span>Red gem</span><b>${rec?.red ? 'Found' : level.boss ? '—' : '?'}</b>
-        <span>Crown</span><b>${rec?.crown ? '👑' : '—'}</b>
+        <span>Crown</span><b>${rec?.crown ? icon('crown') : '—'}</b>
       </div>
-      <p class="muted">★1 reach the exit · ★2 ${level.boss ? 'take no damage' : 'every blue gem'} · ★3 ${level.boss ? 'under par' : 'red gem or under par'}. Crown: flawless, no rewinds.</p>
+      <p class="muted">First star: reach the exit. Second: ${level.boss ? 'take no damage' : 'every blue gem'}. Third: ${level.boss ? 'finish under par' : 'the red gem or under par'}. The Crown: a flawless run without rewinds.</p>
       <div class="row"><button class="btn ghost" data-x="close">Back</button><button class="btn primary" data-x="play">Play</button></div>
     </div>`);
   el.querySelectorAll('.big-stars i').forEach((i) => i.classList.contains('on') || i.classList.add('off'));
@@ -376,7 +414,8 @@ function openSettings(fromGame) {
   const diffs = Object.entries(DIFFICULTIES).map(([k, d]) => [k, d.label, k === 'purist' && !profile.purist]);
   const el = openModal(`<h2>Settings</h2>
     <h3>Control deck</h3>
-    ${seg('control', [['dpad', 'D-pad'], ['joystick', 'Joystick'], ['keypad', 'Classic keypad'], ['swipe', 'Swipe']], settings.control)}
+    ${seg('control', [['dpad', 'D-pad'], ['joystick', 'Joystick'], ['keypad', 'Keypad'], ['swipe', 'No buttons']], settings.control)}
+    <div class="set-row"><label for="s-float">Floating tool and rewind buttons (no-buttons mode)</label><input id="s-float" type="checkbox" ${settings.floatButtons ? 'checked' : ''}></div>
     <div class="set-row"><label for="s-left">Left-handed (mirror deck)</label><input id="s-left" type="checkbox" ${settings.leftHanded ? 'checked' : ''}></div>
     <div class="set-row"><label for="s-size">Button size</label><input id="s-size" type="range" min="0.8" max="1.3" step="0.05" value="${settings.buttonScale}"></div>
     <div class="set-row"><label for="s-op">Button opacity</label><input id="s-op" type="range" min="0.4" max="1" step="0.05" value="${settings.buttonOpacity}"></div>
@@ -416,12 +455,13 @@ function openSettings(fromGame) {
     inp.oninput = () => {
       settings[key] = inp.type === 'checkbox' ? inp.checked : parse(inp.value);
       applySettings();
-      if (key === 'leftHanded' && screen === 'game') buildDeck();
+      if ((key === 'leftHanded' || key === 'floatButtons') && screen === 'game') buildDeck();
       if (key === 'split' && renderer) requestAnimationFrame(() => renderer.resize());
       save();
     };
   };
   bind('#s-left', 'leftHanded');
+  bind('#s-float', 'floatButtons');
   bind('#s-size', 'buttonScale', Number);
   bind('#s-op', 'buttonOpacity', Number);
   bind('#s-split', 'split', Number);
@@ -492,6 +532,7 @@ const input = new Input({
     session.setPreview(on);
   },
   lantern: () => useClue('lantern'),
+  gestures: () => settings.control === 'swipe',
   active: () => screen === 'game' && !!session && !modalOpen && !session.over,
   haptic,
 });
@@ -502,21 +543,23 @@ function buildDeck() {
   input.clear();
   deck.className = `deck ${settings.leftHanded ? 'lefty' : ''}`;
   gameScreen.classList.toggle('swipe-mode-on', settings.control === 'swipe');
+  gameScreen.classList.toggle('float-on', !!settings.floatButtons);
   const act = `<div class="pad-act"><div class="act-grid">
-      <button class="act-btn rewind" data-a="rewind" aria-label="Rewind">B<small>REWIND</small></button>
-      <button class="act-btn tool" data-a="tool" aria-label="Use tool"><canvas id="tool-icon" width="40" height="40"></canvas></button>
+      <button class="act-btn rewind" data-a="rewind" aria-label="Rewind">${icon('rewind', { fill: '#eaf4ff' })}<small></small></button>
+      <button class="act-btn tool" data-a="tool" aria-label="Use tool"><canvas id="tool-icon" width="40" height="40"></canvas>${icon('hand', { fill: '#3a2405' })}</button>
       <div class="mini-row">
-        <button class="mini" data-a="cycle" aria-label="Cycle tool">⇄ Tool</button>
-        <button class="mini" data-a="map" aria-label="Rock-fall preview (hold)">Map</button>
-        <button class="mini swap-btn" data-a="swap" aria-label="Swap explorers">⇆ Swap</button>
+        <button class="mini" data-a="cycle" aria-label="Cycle tool">${icon('cycle')}Tool</button>
+        <button class="mini" data-a="map" aria-label="Rock-fall preview (hold)">${icon('eye')}Map</button>
+        <button class="mini swap-btn" data-a="swap" aria-label="Swap explorers">${icon('swap')}Swap</button>
       </div></div></div>`;
   if (settings.control === 'keypad') {
     deck.classList.add('keypad-mode');
-    deck.innerHTML = `<div class="phone"><div class="brand">EXPEDITION 2006</div><div class="keypad">
-      <button data-k="1">1<small>MAP</small></button><button data-k="2" class="nav">2<small>▲</small></button><button data-k="3">3<small>II</small></button>
-      <button data-k="4" class="nav">4<small>◀</small></button><button data-k="5">5<small>TOOL</small></button><button data-k="6" class="nav">6<small>▶</small></button>
-      <button data-k="7">7<small>🏮</small></button><button data-k="8" class="nav">8<small>▼</small></button><button data-k="9">9<small>⇆</small></button>
-      <button data-k="*">*<small>◀T</small></button><button data-k="0">0<small>⟲</small></button><button data-k="#">#<small>T▶</small></button>
+    const k = (n, label, cls = '') => `<button data-k="${n}" class="${cls}">${n}<small>${label}</small></button>`;
+    deck.innerHTML = `<div class="phone"><div class="brand">EXPEDITION KEYPAD</div><div class="keypad">
+      ${k(1, icon('eye'))}${k(2, icon('up'), 'nav')}${k(3, icon('pause'))}
+      ${k(4, icon('left'), 'nav')}${k(5, icon('hand'))}${k(6, icon('right'), 'nav')}
+      ${k(7, icon('lantern'))}${k(8, icon('down'), 'nav')}${k(9, icon('swap'))}
+      ${k('*', 'TOOL')}${k(0, icon('rewind'))}${k('#', 'TOOL')}
       </div></div>`;
     const dirs = { 2: 'U', 4: 'L', 6: 'R', 8: 'D' };
     deck.querySelectorAll('[data-k]').forEach((b) => {
@@ -537,9 +580,9 @@ function buildDeck() {
     input.bindJoystick(deck.querySelector('.joy-zone'), deck.querySelector('.joy-knob'), deck.querySelector('.joy-base'));
   } else {
     deck.innerHTML = `<div class="pad-move"><div class="dpad">
-      <button class="u" aria-label="Up">▲</button><button class="l" aria-label="Left">◀</button>
+      <button class="u" aria-label="Up">${icon('up')}</button><button class="l" aria-label="Left">${icon('left')}</button>
       <span class="c"></span>
-      <button class="r" aria-label="Right">▶</button><button class="d" aria-label="Down">▼</button>
+      <button class="r" aria-label="Right">${icon('right')}</button><button class="d" aria-label="Down">${icon('down')}</button>
       </div></div>${act}`;
     for (const [c, d] of [['u', 'U'], ['d', 'D'], ['l', 'L'], ['r', 'R']]) input.bindHoldButton(deck.querySelector(`.dpad .${c}`), d, `dp${d}`);
   }
@@ -621,6 +664,16 @@ function startStage(id, { autoplay = false } = {}) {
   banner.innerHTML = `<b>${esc(level.boss ? level.name : `${level.id} ${level.name}`)}</b><small>${esc(level.idea)}</small>`;
   banner.classList.add('show');
   setTimeout(() => banner.classList.remove('show'), 2200);
+  if (!showGestureHint.shown) showGestureHint();
+}
+
+function showGestureHint() {
+  const el = $('#gesture-hint');
+  if (!el || settings.control !== 'swipe') return;
+  showGestureHint.shown = true;
+  el.textContent = 'Swipe to move · Tap for tool · Two-finger tap to rewind';
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 4200);
 }
 
 function updateHud(s) {
@@ -633,20 +686,26 @@ function updateHud(s) {
   red.classList.toggle('none', !st.redTotal);
   red.classList.toggle('got', st.red > 0);
   const hearts = [];
-  for (let i = 0; i < st.hero.maxHearts; i++) hearts.push(`<span class="h ${i < st.hero.hearts ? '' : 'off'}">♥</span>`);
+  for (let i = 0; i < st.hero.maxHearts; i++) hearts.push(`<span class="h ${i < st.hero.hearts ? '' : 'off'}">${icon('heart', { fill: 'url(#ruby)' })}</span>`);
   $('#hud-hearts').innerHTML = hearts.join('');
   $('#hud-keys').innerHTML = Object.entries(st.hero.keys).filter(([, n]) => n > 0).map(([c, n]) =>
     `<i title="${c} key" style="background:${COLORS.key[c]};${shapeCss(KEY_SHAPES[c])}"></i>${n > 1 ? `<small>${n}</small>` : ''}`).join('');
   const tool = currentTool(st);
-  const icon = $('#tool-icon');
-  if (icon) icon.parentElement.classList.toggle('empty', !tool);
-  if (icon && icon.dataset.tool !== String(tool)) {
-    icon.dataset.tool = String(tool);
-    drawToolIcon(icon, tool);
+  const toolCanvas = $('#tool-icon');
+  if (toolCanvas) toolCanvas.parentElement.classList.toggle('empty', !tool);
+  if (toolCanvas && toolCanvas.dataset.tool !== String(tool)) {
+    toolCanvas.dataset.tool = String(tool);
+    drawToolIcon(toolCanvas, tool);
   }
   document.querySelectorAll('.swap-btn').forEach((b) => { b.hidden = !st.partner; });
   const rw = document.querySelector('.act-btn.rewind small');
-  if (rw) rw.textContent = s.rewindCap === Infinity ? '⟲ ∞' : `⟲ ${s.rewindLeft}`;
+  if (rw) {
+    const label = s.rewindCap === Infinity ? 'inf' : String(s.rewindLeft);
+    if (rw.dataset.v !== label) {
+      rw.dataset.v = label;
+      rw.innerHTML = s.rewindCap === Infinity ? icon('infinity', { fill: '#eaf4ff' }) : label;
+    }
+  }
 }
 
 function shapeCss(shape) {
@@ -683,7 +742,7 @@ function openPause() {
   const clue = (k, name, desc, cost) => `<div class="clue"><div class="info"><b>${esc(name)}</b><small>${esc(desc)}</small></div>
     <button class="btn" data-clue="${k}" ${purist || profile.insight < cost ? 'disabled' : ''}><i class="ico insight"></i> ${cost}</button></div>`;
   const el = openModal(`<h2>Paused</h2>
-    <p class="muted">${esc(session.level.id)} · ${esc(session.level.name)} · ${session.state.moves} moves · rewinds ${session.rewindCap === Infinity ? '∞' : `${session.rewindLeft}/${session.rewindCap}`}</p>
+    <p class="muted">${esc(session.level.id)} · ${esc(session.level.name)} · ${session.state.moves} moves · rewinds ${session.rewindCap === Infinity ? 'unlimited' : `${session.rewindLeft}/${session.rewindCap}`}</p>
     <h3>Explorer's journal</h3>
     <div class="journal">${lines}</div>
     ${purist ? '' : `<h3>Clues · <i class="ico insight"></i> ${profile.insight}</h3>
@@ -693,11 +752,23 @@ function openPause() {
     <p class="muted">${upgradeLevel(profile, 'preview') ? 'Hold M or the Map button to preview where loose rocks will land.' : 'The rock-fall lens (merchant\'s tent) shows where loose rocks will land.'}</p>`}
     <div class="col">
       <button class="btn primary" data-x="resume">Resume</button>
-      <div class="row" style="margin-top:0"><button class="btn" data-x="restart">Restart stage</button><button class="btn" data-x="settings">Settings</button></div>
+      <div class="row" style="margin-top:0"><button class="btn" data-x="restart">Restart</button><button class="btn" data-x="settings">Settings</button></div>
+      <button class="btn ghost" data-x="controls">${settings.control === 'swipe' ? 'Show control buttons' : 'Hide control buttons'}</button>
       <button class="btn ghost" data-x="quit">Back to map</button>
     </div>`, { onClose: () => session && session.setPaused(false) });
   el.querySelector('[data-x=resume]').onclick = closeModal;
   el.querySelector('[data-x=restart]').onclick = () => startStage(session.level.id);
+  el.querySelector('[data-x=controls]').onclick = () => {
+    if (settings.control === 'swipe') settings.control = settings.lastDeck || 'dpad';
+    else {
+      settings.lastDeck = settings.control;
+      settings.control = 'swipe';
+    }
+    save();
+    buildDeck();
+    closeModal();
+    showGestureHint();
+  };
   el.querySelector('[data-x=settings]').onclick = () => {
     modalOpen.onClose = null;
     openSettings(true);
@@ -723,7 +794,7 @@ function onDeath(s) {
     <p class="death-cause">${esc(s.state.lastHurt || 'You fell')}</p>
     <p class="muted">${canRewind ? 'Rewind one step, or return to the last checkpoint idol.' : 'Return to the last checkpoint idol and try again.'}</p>
     <div class="col">
-      ${canRewind ? '<button class="btn primary" data-x="rewind">⟲ Rewind</button>' : ''}
+      ${canRewind ? `<button class="btn primary" data-x="rewind">${icon('rewind', { fill: '#2a1804' })}Rewind</button>` : ''}
       <button class="btn ${canRewind ? '' : 'primary'}" data-x="cp">Restart from checkpoint</button>
       <button class="btn ghost" data-x="quit">Back to map</button>
     </div>`);
@@ -794,7 +865,7 @@ function onWin(s) {
   const el = openModal(`<h2>${res.secret ? 'Secret exit!' : level.boss ? 'Guardian defeated!' : 'Stage clear!'}</h2>
     <p class="muted">${esc(level.id)} · ${esc(level.name)}${res.assisted ? ' · assisted' : ''}</p>
     <div class="big-stars"><i class="ico star"></i><i class="ico star"></i><i class="ico star"></i></div>
-    ${res.crown ? '<p class="crown-line">👑 CROWN · FLAWLESS RUN</p>' : ''}
+    ${res.crown ? `<p class="crown-line">${icon('crown')}Crown · Flawless run</p>` : ''}
     <div class="stat-grid">
       <span>Time</span><b>${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}</b>
       <span>Moves (par ${level.par})</span><b>${res.moves}</b>
@@ -867,6 +938,15 @@ $('#hub-story').onclick = () => showComic(false);
 $('#modal').addEventListener('pointerdown', (e) => {
   if (e.target.id === 'modal' && modalOpen && !(session && session.over)) closeModal();
 });
+
+// Interface art: gilded SVG icons and treasure images painted by the game's
+// own high-detail gem renderer.
+document.querySelectorAll('[data-icon]').forEach((el) => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
+try {
+  const root = document.documentElement.style;
+  root.setProperty('--gem-img', `url(${iconURL('gem')})`);
+  root.setProperty('--ruby-img', `url(${iconURL('red')})`);
+} catch { /* canvas unavailable: icons fall back to plain shapes */ }
 
 applySettings();
 initTitle();

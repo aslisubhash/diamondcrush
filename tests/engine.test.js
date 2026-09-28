@@ -36,7 +36,7 @@ test('standing under a rock is safe; it wobbles one tick after you leave, then f
   assert.equal(at(s, 2, 3).t, 'boulder');
 });
 
-test('a falling rock landing on the hero costs a heart', () => {
+test('a falling rock landing on the hero is fatal on Classic', () => {
   const s = createState(room([
     'WWWWW',
     'W.B.W',
@@ -51,8 +51,22 @@ test('a falling rock landing on the hero costs a heart', () => {
   run(s, 'R');
   run(s, '...');
   assert.equal(s.hurts, 1, toAscii(s));
-  assert.equal(s.hero.hearts, 2);
+  assert.equal(s.hero.hearts, 0);
+  assert.equal(s.status, 'dead');
   assert.match(s.lastHurt, /Crushed/);
+});
+
+test('rocks cannot be pushed upward', () => {
+  const s = createState(room([
+    'WWWWW',
+    'W...W',
+    'W.B.W',
+    'W.H.W',
+    'WWWWW',
+  ]));
+  run(s, 'U U');
+  assert.deepEqual([s.hero.x, s.hero.y], [2, 3]);
+  assert.equal(s.obj[2 * 5 + 2].t, 'boulder');
 });
 
 test('Relic Hunter crushes cost two hearts; Purist has no wobble warning', () => {
