@@ -29,9 +29,27 @@ export const DEFAULT_LEGEND = {
   M: { enemy: { t: 'monkey', dir: 'L' } },
   h: { obj: { t: 'tool', tool: 'hammer' } },
   f: { obj: { t: 'fruit' } },
-  N: { boss: 'naga' },
+  N: { boss: true },
   L: { floor: 'lair' },
+  I: { floor: 'ice' },
+  '%': { floor: 'grass' },
+  '&': { partner: true },
+  '(': { floor: 'conv', meta: { dir: 'L' } },
+  ')': { floor: 'conv', meta: { dir: 'R' } },
+  x: { enemy: { t: 'bat', dir: 'R' } },
+  n: { enemy: { t: 'knight', dir: 'R' } },
+  r: { enemy: { t: 'rat', dir: 'R' } },
+  y: { enemy: { t: 'yeti', dir: 'R' } },
+  j: { enemy: { t: 'spirit', dir: 'R' } },
+  z: { enemy: { t: 'langur', dir: 'L' } },
+  t: { enemy: { t: 'tiger', dir: 'R' } },
+  u: { enemy: { t: 'thug', dir: 'L' } },
+  e: { enemy: { t: 'echo', dir: 'R' } },
+  '=': { floor: 'den' },
 };
+
+// Floor laid under a boss marker, per boss type.
+const BOSS_FLOOR = { naga: 'lair', frost: 'den' };
 
 export function parseLevel(level) {
   const legend = { ...DEFAULT_LEGEND, ...(level.legend || {}) };
@@ -43,6 +61,7 @@ export function parseLevel(level) {
   const meta = {};
   const enemies = [];
   let hero = null;
+  let partner = null;
   let boss = null;
   let nextId = 1;
 
@@ -58,14 +77,16 @@ export function parseLevel(level) {
       if (def.obj) obj[i] = { id: nextId++, st: 'rest', ...def.obj };
       if (def.enemy) enemies.push({ id: nextId++, x, y, alive: true, ...def.enemy });
       if (def.hero) hero = { x, y };
+      if (def.partner) partner = { x, y };
       if (def.boss) {
-        boss = { t: def.boss, x, y };
-        floor[i] = 'lair';
+        const t = level.bossType || 'naga';
+        boss = { t, x, y };
+        floor[i] = BOSS_FLOOR[t] || 'floor';
       }
     }
   }
   if (!hero) throw new Error(`${level.id}: no hero start (H)`);
   const gemsTotal = obj.filter((o) => o && o.t === 'gem').length;
   const redTotal = obj.filter((o) => o && o.t === 'red').length;
-  return { w, h, floor, obj, meta, enemies, hero, boss, gemsTotal, redTotal, nextId };
+  return { w, h, floor, obj, meta, enemies, hero, partner, boss, gemsTotal, redTotal, nextId };
 }

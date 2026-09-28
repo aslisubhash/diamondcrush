@@ -20,7 +20,7 @@ const tools = toolsFlag ? toolsFlag.slice(8).split(',') : toolsBefore(id);
 const s = createState(level, { tools, difficulty: 'classic' });
 
 function goto(st, tx, ty) {
-  const key = (q) => `${q.hero.x},${q.hero.y},${q.tick % 12},${q.hero.windup ? q.hero.windup.dir : ''},${q.obj.map((o) => (o ? o.id : '')).join()},${q.enemies.map((e) => `${e.x}.${e.y}.${e.dir}`).join()}`;
+  const key = (q) => `${q.hero.x},${q.hero.y},${q.hero.slide},${q.tick % 12},${q.hero.windup ? q.hero.windup.dir : ''},${q.obj.map((o) => (o ? o.id + (o.slide || '') : '')).join()},${q.enemies.map((e) => `${e.x}.${e.y}.${e.dir}.${e.alive}`).join()},${q.boss ? [q.boss.x, q.boss.y, q.boss.hp].join('.') : ''}`;
   const seen = new Set([key(st)]);
   let frontier = [{ st, path: '' }];
   for (let depth = 0; depth < 60 && frontier.length && seen.size < 200000; depth++) {
@@ -44,7 +44,7 @@ function goto(st, tx, ty) {
 }
 
 let compiled = '';
-const tokens = movesArg.match(/@\d+,\d+|[UDLRudlrT.<>]/g) || [];
+const tokens = movesArg.match(/@\d+,\d+|[UDLRudlrTX.<>]/g) || [];
 for (const tok of tokens) {
   let seq = tok;
   if (tok.startsWith('@')) {
@@ -72,7 +72,7 @@ for (const tok of tokens) {
       continue;
     }
     const ok = act(s, a);
-    const ch = a ? (a.dir || 'T') : '.';
+    const ch = a ? (a.dir || (a.type === 'swap' ? 'X' : 'T')) : '.';
     if (!ok) {
       console.log(toAscii(s));
       console.log(summary(s));

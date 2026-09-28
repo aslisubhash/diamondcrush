@@ -5,7 +5,8 @@ import { Renderer } from './render/renderer.js';
 import { AudioEngine } from './audio/audio.js';
 import { Input } from './input.js';
 import { GameSession } from './game.js';
-import { DIFFICULTIES, KEY_SHAPES } from './engine/constants.js';
+import { DIFFICULTIES, KEY_SHAPES, TOOLS } from './engine/constants.js';
+import { parseLevel } from './engine/level.js';
 import { COLORS } from './render/palette.js';
 import { loadAll, saveAll, UPGRADES, upgradeLevel, insightCap, stepMs } from './save.js';
 import { startTitleArt, COMIC, drawComic, drawToolIcon } from './ui/art.js';
@@ -130,18 +131,40 @@ function showComic(first) {
 
 // ---------- hub map ----------
 
-const MAIN_ORDER = ['1-1', '1-2', '1-3', '1-4', '1-5', '1-6', '1-7', '1-8', '1-9', '1-10'];
-const BOSS_GEM_GATE = 90;
+// Per-world structure: main stages in order, secrets, and the boss.
+function worldOf(id) {
+  return WORLDS.find((w) => w.levels.some((l) => l.id === id)) || WORLDS[0];
+}
+function mainOrder(w) {
+  return w.levels.filter((l) => !l.secret && !l.boss).map((l) => l.id);
+}
+function bossOf(w) {
+  return w.levels.find((l) => l.boss) || null;
+}
+function worldNum(w) {
+  return WORLDS.indexOf(w) + 1;
+}
+// Star gate: the boss needs about two thirds of the world's blue gems.
+function gemGate(w) {
+  const total = mainOrder(w).reduce((n, id) => n + gemCount(getLevel(id)), 0);
+  return Math.floor(total * 0.6);
+}
+const gemCache = new Map();
+function gemCount(level) {
+  if (!gemCache.has(level.id)) gemCache.set(level.id, parseLevel(level).gemsTotal);
+  return gemCache.get(level.id);
+}
 
 function stageRec(id) {
   return profile.stages[id] || null;
 }
 
-function totals() {
+function totals(w) {
   let gems = 0;
   let stars = 0;
   let crowns = 0;
-  for (const r of Object.values(profile.stages)) {
+  for (const [id, r] of Object.entries(profile.stages)) {
+    if (w && worldOf(id) !== w) continue;
     gems += r.gems || 0;
     stars += (r.stars || []).filter(Boolean).length;
     if (r.crown) crowns++;
@@ -149,19 +172,34 @@ function totals() {
   return { gems, stars, crowns };
 }
 
+function worldUnlocked(w) {
+  const n = WORLDS.indexOf(w);
+  if (!w.playable) return false;
+  if (n === 0) return true;
+  const prev = WORLDS[n - 1];
+  const b = bossOf(prev);
+  return !!(b && stageRec(b.id)?.done);
+}
+
 function isUnlocked(level) {
+  const w = worldOf(level.id);
+  if (!worldUnlocked(w)) return false;
   if (level.secret) return !!profile.unlocked[level.id];
-  if (level.boss) return !!stageRec('1-10')?.done && totals().gems >= BOSS_GEM_GATE;
-  const i = MAIN_ORDER.indexOf(level.id);
-  return i === 0 || !!stageRec(MAIN_ORDER[i - 1])?.done;
+  const order = mainOrder(w);
+  if (level.boss) return !!stageRec(order[order.length - 1])?.done && totals(w).gems >= gemGate(w);
+  const i = order.indexOf(level.id);
+  return i === 0 || !!stageRec(order[i - 1])?.done;
 }
 
 function lockReason(level) {
+  const w = worldOf(level.id);
+  if (!worldUnlocked(w)) return 'Defeat the previous world\'s guardian to travel here.';
   if (level.secret) return 'A secret stage. Look for a hidden exit in an earlier stage.';
   if (level.boss) {
-    const g = totals().gems;
-    if (!stageRec('1-10')?.done) return 'Clear Heart of the Jungle to reach the guardian.';
-    return `The star gate needs ${BOSS_GEM_GATE} blue gems. You have ${g}.`;
+    const order = mainOrder(w);
+    const last = getLevel(order[order.length - 1]);
+    if (!stageRec(last.id)?.done) return `Clear ${last.name} to reach the guardian.`;
+    return `The star gate needs ${gemGate(w)} blue gems from this world. You have ${totals(w).gems}.`;
   }
   return 'Clear the previous stage first.';
 }
@@ -174,45 +212,54 @@ function showMap() {
 
 function renderHub() {
   const t = totals();
+  if (!worldUnlocked(WORLDS.find((x) => x.id === selectedWorld)) && selectedWorld !== WORLDS[0].id) {
+    const open = WORLDS.filter(worldUnlocked);
+    if (!open.length) selectedWorld = WORLDS[0].id;
+  }
   $('#hub-coins').textContent = profile.coins;
   $('#hub-insight').textContent = profile.insight;
   $('#hub-gems').textContent = t.gems;
   $('#hub-stars').textContent = t.stars;
   $('#world-tabs').innerHTML = WORLDS.map((w) =>
-    `<button data-w="${w.id}" class="${w.id === selectedWorld ? 'on' : ''} ${w.playable ? '' : 'locked'}">${esc(w.name)}</button>`).join('');
+    `<button data-w="${w.id}" class="${w.id === selectedWorld ? 'on' : ''} ${worldUnlocked(w) ? '' : 'locked'}">${esc(w.name)}</button>`).join('');
   $('#world-tabs').querySelectorAll('button').forEach((b) => {
     b.onclick = () => {
       selectedWorld = b.dataset.w;
+      renderHub.scrolled = false;
       audio.sfx('ui');
       renderHub();
     };
   });
   const w = WORLDS.find((x) => x.id === selectedWorld);
   const view = $('#world-view');
-  if (!w.playable) {
-    view.innerHTML = `<div class="world-head"><h2>${esc(w.name)}</h2><p>${esc(w.place)} · ${esc(w.mood)}</p></div>
-      <div class="coming"><h3>On the expedition map</h3>This world is planned for a later build. Its mechanics are in the design document
-      and the engine is built to take them. For now, the Heart Stone of Angkor awaits.</div>`;
+  const num = worldNum(w);
+  if (!worldUnlocked(w)) {
+    const prev = WORLDS[WORLDS.indexOf(w) - 1];
+    const guard = prev && bossOf(prev);
+    view.innerHTML = `<div class="world-head"><h2>World ${num} · ${esc(w.name)}</h2><p>${esc(w.place)} · ${esc(w.mood)}</p></div>
+      <div class="coming"><h3>The road is sealed</h3>${guard ? `Defeat ${esc(guard.name)} in ${esc(prev.name)} to carry its Heart Stone here.` : 'Coming soon.'}</div>`;
     return;
   }
   // Winding trail: main stages top to bottom, secrets on side branches, boss last.
+  const order = mainOrder(w);
   const nodes = [];
   const gap = 104;
   let y = 60;
-  MAIN_ORDER.forEach((id, i) => {
+  order.forEach((id, i) => {
     const x = 50 + Math.sin(i * 1.15) * 28;
     nodes.push({ id, x, y });
-    if (id === '1-4') nodes.push({ id: '1-S1', x: x > 50 ? 16 : 84, y: y + gap / 2, branch: nodes[nodes.length - 1] });
-    if (id === '1-8') nodes.push({ id: '1-S2', x: x > 50 ? 16 : 84, y: y + gap / 2, branch: nodes[nodes.length - 1] });
+    const lvl = getLevel(id);
+    if (lvl.secretExit) nodes.push({ id: `${num}-${lvl.secretExit}`, x: x > 50 ? 16 : 84, y: y + gap / 2, branch: nodes[nodes.length - 1] });
     y += gap;
   });
-  nodes.push({ id: '1-B', x: 50, y: y + 10 });
+  const boss = bossOf(w);
+  if (boss) nodes.push({ id: boss.id, x: 50, y: y + 10 });
   const height = y + 90;
   const main = nodes.filter((n) => !n.branch);
   const pathD = main.map((n, i) => `${i ? 'L' : 'M'} ${n.x} ${n.y}`).join(' ');
   const branches = nodes.filter((n) => n.branch).map((n) => `M ${n.branch.x} ${n.branch.y} L ${n.x} ${n.y}`).join(' ');
-  const firstOpen = MAIN_ORDER.find((id) => !stageRec(id)?.done);
-  view.innerHTML = `<div class="world-head"><h2>World 1 · ${esc(w.name)}</h2><p>${esc(w.mood)}</p></div>
+  const firstOpen = order.find((id) => !stageRec(id)?.done);
+  view.innerHTML = `<div class="world-head"><h2>World ${num} · ${esc(w.name)}</h2><p>${esc(w.place)} · ${esc(w.mood)}</p></div>
     <div class="trail" style="height:${height}px">
       <svg viewBox="0 0 100 ${height}" preserveAspectRatio="none">
         <path d="${pathD}" fill="none" stroke="#6d5d3b" stroke-width="2.4" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" style="stroke-width:5px"/>
@@ -419,6 +466,7 @@ const input = new Input({
   move: (d) => { if (session && screen === 'game' && !modalOpen) session.queueMove(d); },
   tool: () => { if (session && !modalOpen) session.queueTool(); },
   cycle: (s) => { if (session && !modalOpen) session.cycle(s); },
+  swap: () => { if (session && !modalOpen) session.swap(); },
   rewind: () => {
     if (!session) return;
     if (modalOpen && session.over && session.state.status === 'dead') {
@@ -460,13 +508,14 @@ function buildDeck() {
       <div class="mini-row">
         <button class="mini" data-a="cycle" aria-label="Cycle tool">⇄ Tool</button>
         <button class="mini" data-a="map" aria-label="Rock-fall preview (hold)">Map</button>
+        <button class="mini swap-btn" data-a="swap" aria-label="Swap explorers">⇆ Swap</button>
       </div></div></div>`;
   if (settings.control === 'keypad') {
     deck.classList.add('keypad-mode');
     deck.innerHTML = `<div class="phone"><div class="brand">EXPEDITION 2006</div><div class="keypad">
       <button data-k="1">1<small>MAP</small></button><button data-k="2" class="nav">2<small>▲</small></button><button data-k="3">3<small>II</small></button>
       <button data-k="4" class="nav">4<small>◀</small></button><button data-k="5">5<small>TOOL</small></button><button data-k="6" class="nav">6<small>▶</small></button>
-      <button data-k="7">7<small>🏮</small></button><button data-k="8" class="nav">8<small>▼</small></button><button data-k="9">9</button>
+      <button data-k="7">7<small>🏮</small></button><button data-k="8" class="nav">8<small>▼</small></button><button data-k="9">9<small>⇆</small></button>
       <button data-k="*">*<small>◀T</small></button><button data-k="0">0<small>⟲</small></button><button data-k="#">#<small>T▶</small></button>
       </div></div>`;
     const dirs = { 2: 'U', 4: 'L', 6: 'R', 8: 'D' };
@@ -478,6 +527,7 @@ function buildDeck() {
       else if (k === '1') input.bindTapButton(b, () => input.a.preview(true), () => input.a.preview(false));
       else if (k === '3') input.bindTapButton(b, () => openPause());
       else if (k === '7') input.bindTapButton(b, () => useClue('lantern'));
+      else if (k === '9') input.bindTapButton(b, () => session?.swap());
       else if (k === '*') input.bindTapButton(b, () => session?.cycle(-1));
       else if (k === '#') input.bindTapButton(b, () => session?.cycle(1));
     });
@@ -499,6 +549,7 @@ function buildDeck() {
     if (a === 'rewind') input.bindTapButton(b, () => session?.rewind());
     if (a === 'cycle') input.bindTapButton(b, () => session?.cycle(1));
     if (a === 'map') input.bindTapButton(b, () => input.a.preview(true), () => input.a.preview(false));
+    if (a === 'swap') input.bindTapButton(b, () => session?.swap());
   });
   if (session) updateHud(session);
   requestAnimationFrame(() => renderer && renderer.resize());
@@ -537,6 +588,8 @@ function bindGameChrome() {
 
 function startStage(id, { autoplay = false } = {}) {
   const level = getLevel(id);
+  if (selectedWorld !== worldOf(id).id) renderHub.scrolled = false;
+  selectedWorld = worldOf(id).id;
   closeModal();
   show('game');
   if (!renderer) {
@@ -591,6 +644,7 @@ function updateHud(s) {
     icon.dataset.tool = String(tool);
     drawToolIcon(icon, tool);
   }
+  document.querySelectorAll('.swap-btn').forEach((b) => { b.hidden = !st.partner; });
   const rw = document.querySelector('.act-btn.rewind small');
   if (rw) rw.textContent = s.rewindCap === Infinity ? '⟲ ∞' : `⟲ ${s.rewindLeft}`;
 }
@@ -719,14 +773,18 @@ function onWin(s) {
   let unlockMsg = '';
   if (level.reward && !profile.tools.includes(level.reward)) {
     profile.tools.push(level.reward);
-    unlockMsg = 'Reward: the grapple hook. Face a boulder and use it to pull it towards you.';
+    const tl = TOOLS[level.reward];
+    unlockMsg = `Reward: the ${tl.name.toLowerCase()}. ${tl.hint}.`;
   }
   if (level.boss) {
+    const w = worldOf(level.id);
+    const nextW = WORLDS[WORLDS.indexOf(w) + 1];
+    if (nextW && nextW.playable) unlockMsg += ` The road to ${nextW.name} is open.`;
     if (!profile.purist) unlockMsg += ' Purist difficulty unlocked.';
     profile.purist = true;
   }
   if (res.secret && level.secretExit) {
-    const sid = `1-${level.secretExit}`;
+    const sid = `${level.id.split('-')[0]}-${level.secretExit}`;
     if (!profile.unlocked[sid]) unlockMsg = `Secret exit found! "${getLevel(sid).name}" is now on the map.`;
     profile.unlocked[sid] = true;
   }
@@ -770,9 +828,16 @@ function onWin(s) {
 }
 
 function nextStageId(id) {
-  const i = MAIN_ORDER.indexOf(id);
-  if (i >= 0 && i < MAIN_ORDER.length - 1) return MAIN_ORDER[i + 1];
-  if (id === '1-10' && isUnlocked(getLevel('1-B'))) return '1-B';
+  const w = worldOf(id);
+  const order = mainOrder(w);
+  const i = order.indexOf(id);
+  if (i >= 0 && i < order.length - 1) return order[i + 1];
+  const boss = bossOf(w);
+  if (i === order.length - 1 && boss && isUnlocked(boss)) return boss.id;
+  if (boss && id === boss.id) {
+    const nextW = WORLDS[WORLDS.indexOf(w) + 1];
+    if (nextW && worldUnlocked(nextW)) return mainOrder(nextW)[0];
+  }
   return null;
 }
 

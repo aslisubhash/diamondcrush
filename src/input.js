@@ -71,6 +71,7 @@ export class Input {
         case 'Space': case 'Digit5': case 'Numpad5': case 'Enter':
           if (this.a.active()) { this.a.tool(); e.preventDefault(); }
           break;
+        case 'KeyX': case 'KeyC': case 'Digit9': case 'Numpad9': this.a.swap?.(); break;
         case 'KeyQ': this.a.cycle(-1); break;
         case 'KeyE': this.a.cycle(1); break;
         case 'NumpadMultiply': this.a.cycle(-1); break;
@@ -130,6 +131,7 @@ export class Input {
     if (edge(5)) this.a.cycle(1);
     if (edge(9)) this.a.pause();
     if (edge(3)) this.a.preview(true);
+    if (edge(2)) this.a.swap?.();
     if (!now[3] && prev[3]) this.a.preview(false);
     this.pad.buttons = now;
   }

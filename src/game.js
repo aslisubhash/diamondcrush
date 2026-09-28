@@ -3,11 +3,11 @@
 // history, checkpoints, and turns engine events into sound and feedback.
 import { createState, act, cloneState, cycleTool, currentTool, remaining } from './engine/sim.js';
 import { parseMoves } from './engine/replay.js';
-import { DIFFICULTIES, BG_TICK_MS, KEY_SHAPES } from './engine/constants.js';
+import { DIFFICULTIES, BG_TICK_MS, KEY_SHAPES, TOOLS } from './engine/constants.js';
 import { predictFalls } from './engine/sim.js';
 import { stepMs, upgradeLevel } from './save.js';
+import { toolsBefore } from './levels/index.js';
 
-const TOOL_NAMES = { hammer: 'Hammer', grapple: 'Grapple hook' };
 
 export class GameSession {
   constructor({ level, profile, settings, renderer, audio, hooks, autoplay = false }) {
@@ -20,7 +20,11 @@ export class GameSession {
     const difficulty = profile.difficulty || 'classic';
     this.diff = DIFFICULTIES[difficulty];
     const maxHearts = this.diff.hearts + upgradeLevel(profile, 'heart');
-    this.state = createState(level, { difficulty, tools: profile.tools, maxHearts });
+    // Tools come from the profile plus anything earlier levels hand out, so
+    // replays, the Spirit guide and jumps between worlds never lack one.
+    // The Spirit guide replays with exactly the tools its solution was tested with.
+    const tools = autoplay ? toolsBefore(level.id) : [...new Set([...toolsBefore(level.id), ...profile.tools])];
+    this.state = createState(level, { difficulty, tools, maxHearts, lead: profile.lead });
     this.rewindCap = this.diff.rewind === Infinity ? Infinity : this.diff.rewind + 5 * upgradeLevel(profile, 'rewind');
     this.rewindLeft = this.rewindCap;
     this.rewindsUsed = 0;
@@ -47,7 +51,7 @@ export class GameSession {
     this.lastFrame = now;
     this.renderer.setState(this.state, this.level, now);
     this.renderer.keenEye = upgradeLevel(this.profile, 'eye') > 0;
-    this.audio.playMusic(this.level.boss ? 'boss' : this.level.secret ? 'secret' : this.level.world);
+    this.audio.playMusic(this.level.boss ? `boss-${this.level.world}` : this.level.secret ? `secret-${this.level.world}` : this.level.world);
     this.updateLayers();
     this.hooks.onHud(this);
     this.checkTips();
@@ -67,6 +71,12 @@ export class GameSession {
       return;
     }
     this.buffer = { type: 'tool' };
+  }
+
+  swap() {
+    if (this.over || this.paused || this.autoplay) return;
+    if (!this.state.partner) return;
+    this.buffer = { type: 'swap' };
   }
 
   cycle(step) {
@@ -138,6 +148,7 @@ export class GameSession {
         }
         if (a && a.type === 'cycle') {
           cycleTool(this.state, a.step);
+          this.hooks.onHud(this);
           return;
         }
         this.step(a, now);
@@ -250,7 +261,7 @@ export class GameSession {
         case 'gemBack': a.sfx('gem'); break;
         case 'toolGet':
           a.sfx('tool');
-          this.hooks.toast(`${TOOL_NAMES[e.tool] || e.tool} found! Face a target and press the tool button`, 4000);
+          this.hooks.toast(`${TOOLS[e.tool] ? TOOLS[e.tool].name : e.tool} found! ${TOOLS[e.tool] ? TOOLS[e.tool].hint : ''}`, 4500);
           break;
         case 'heal': a.sfx('checkpoint'); break;
         case 'crumble': a.sfx('dig'); break;
@@ -258,7 +269,38 @@ export class GameSession {
         case 'strike': a.sfx('strike'); break;
         case 'bossHit': a.sfx('bossHit'); this.hitStopUntil = now + 60; this.hooks.haptic(80); break;
         case 'bossPhase': this.hooks.toast(`Phase ${e.phase}! Hearts restored`, 2500); break;
-        case 'bossDown': a.sfx('bossDown'); this.hooks.toast('The Naga Warden falls! Reach the gate'); break;
+        case 'bossDown': a.sfx('bossDown'); this.hooks.toast('The guardian falls! Reach the gate'); break;
+        case 'bossBump': a.sfx('land'); this.hooks.haptic(60); break;
+        case 'chargeWarn': case 'breathWarn': case 'cannonWarn': a.sfx('strikeWarn'); break;
+        case 'breath': case 'cannon': a.sfx('strike'); break;
+        case 'jam': a.sfx('bossHit'); break;
+        case 'ignite': a.sfx('ignite'); break;
+        case 'burn': a.sfx('burn'); break;
+        case 'scorch': if (near(e, 6)) a.sfx('spikeUp'); break;
+        case 'jet': if (near(e, 5)) a.sfx('jet'); break;
+        case 'jetWarn': if (near(e, 4)) a.sfx('spikeWarn'); break;
+        case 'freeze': a.sfx('freeze'); break;
+        case 'melt': if (near(e, 5)) a.sfx('melt'); break;
+        case 'turnMirror': a.sfx('lever'); break;
+        case 'bell': a.sfx('bell'); this.hooks.toast(`Enemies frozen! ${e.left} ring${e.left === 1 ? '' : 's'} left`, 1500); break;
+        case 'disc': a.sfx('disc'); break;
+        case 'switch': a.sfx('lever'); break;
+        case 'swap': a.sfx('swap'); break;
+        case 'slide': if (!types.has('gem')) a.sfx('slide'); break;
+        case 'gust': case 'convey': if (e.hero) a.sfx('lean'); break;
+        case 'spit': if (near(e, 5)) a.sfx('spit'); break;
+        case 'alert': a.sfx('alert'); break;
+        case 'avalanche': if (near(e, 6)) a.sfx('dig'); break;
+        case 'ventWarn': if (near(e, 4)) a.sfx('wobble'); break;
+        case 'poof': if (near(e, 6)) a.sfx('dig'); break;
+        case 'trace': a.sfx('ui'); break;
+        case 'kolamReset': a.sfx('locked'); this.hooks.toast('The pattern broke. Trace it without crossing your path'); break;
+        case 'kolamDone': case 'latch': a.sfx('secret'); break;
+        case 'collapse': if (near(e, 6)) a.sfx('fill'); break;
+        case 'flood': case 'drain': if (near(e, 8)) a.sfx('door'); break;
+        case 'sensorOn': a.sfx('checkpoint'); break;
+        case 'fallPit': a.sfx('kill'); break;
+        case 'lost': a.sfx('ui'); break;
         case 'shatter': if (near(e, 8)) a.sfx('land'); break;
         default:
       }
@@ -283,6 +325,10 @@ export class GameSession {
     }
     const exit = s.gems >= s.quota && s.quota > 0 ? 1 : 0;
     this.audio.setLayers({ danger, discovery, exit, lowHeart: h.hearts === 1 && h.maxHearts > 1 });
+  }
+
+  bellLeft() {
+    return this.state.hero.bell;
   }
 
   checkTips() {

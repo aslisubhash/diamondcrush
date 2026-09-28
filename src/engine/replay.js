@@ -1,6 +1,7 @@
 // Solution strings: U D L R = move, T = use tool, < > = cycle tool,
 // . = one background tick (wait), u d l r = turn to face a direction
-// without stepping (what bumping into a wall does). Whitespace is ignored.
+// without stepping (what bumping into a wall does), X = swap explorers.
+// Whitespace is ignored.
 import { createState, act, cycleTool } from './sim.js';
 
 export function parseMoves(str) {
@@ -8,6 +9,7 @@ export function parseMoves(str) {
     if ('UDLR'.includes(c)) return { type: 'move', dir: c };
     if ('udlr'.includes(c)) return { type: 'face', dir: c.toUpperCase() };
     if (c === 'T') return { type: 'tool' };
+    if (c === 'X') return { type: 'swap' };
     if (c === '.') return null;
     if (c === '<') return { type: 'cycle', step: -1 };
     if (c === '>') return { type: 'cycle', step: 1 };

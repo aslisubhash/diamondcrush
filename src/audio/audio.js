@@ -41,6 +41,29 @@ const SONGS = {
   },
 };
 
+// One hook, many worlds (8.7): each world re-voices the main theme.
+const WORLD_VOICE = {
+  angkor: { transpose: 0, wave: 'pulse25', bpm: 128 },
+  bavaria: { transpose: -3, wave: 'pulse12', bpm: 118, march: true },
+  tibet: { transpose: 2, wave: 'triangle', bpm: 108, soft: true, shimmer: true },
+  india: { transpose: 0, wave: 'pulse12', bpm: 122, drone: true },
+  vault: { transpose: -5, wave: 'pulse50', bpm: 134, arp: true },
+};
+
+// A raga-flavoured hook for the Bharat Expedition (Bhupali-style pentatonic).
+const INDIA_LEAD = 'C5 D5 E5 = G5 E5 D5 C5 D5 = E5 G5 A5 = G5 - A5 G5 E5 = D5 E5 C5 - D5 = = = = - - - ' +
+  'E5 G5 A5 = C6 A5 G5 E5 G5 A5 G5 E5 D5 = C5 - D5 E5 G5 E5 D5 C5 A4 - C5 = = = = - - -';
+
+export function songFor(name) {
+  if (SONGS[name]) return SONGS[name];
+  const [kind, world] = name.includes('-') ? name.split('-') : ['stage', name];
+  const v = WORLD_VOICE[world] || WORLD_VOICE.angkor;
+  if (kind === 'boss') return { ...SONGS.boss, transpose: v.transpose, march: v.march, drone: v.drone };
+  if (kind === 'secret') return { ...SONGS.secret, transpose: 12 + v.transpose };
+  const lead = world === 'india' ? `${INDIA_LEAD} ${B_LEAD}` : `${A_LEAD} ${B_LEAD}`;
+  return { ...SONGS.angkor, ...v, lead };
+}
+
 function tokens(str) {
   return str.trim().split(/\s+/);
 }
@@ -345,6 +368,42 @@ export class AudioEngine {
       case 'ui':
         this.tone({ freq: 1800, wave: 'pulse25', dur: 0.03, vol: 0.12, prio: PRIORITY.ui });
         break;
+      case 'ignite':
+        this.noiseHit({ dur: 0.3, vol: 0.3, freq: 1200, sweep: 3000, type: 'bandpass', prio: PRIORITY.tool });
+        this.tone({ freq: noteHz('G5'), wave: 'pulse25', dur: 0.12, vol: 0.12, at: 0.05, prio: PRIORITY.tool });
+        break;
+      case 'burn':
+        this.noiseHit({ dur: 0.45, vol: 0.35, freq: 900, sweep: 250, prio: PRIORITY.tool });
+        break;
+      case 'jet':
+        this.noiseHit({ dur: 0.25, vol: 0.2, freq: 600, sweep: 1800, type: 'bandpass', prio: PRIORITY.warn });
+        break;
+      case 'freeze':
+        this.arp(['E7', 'B6', 'G#6'], 0.03, 'triangle', 0.1, 0.12);
+        break;
+      case 'melt':
+        this.tone({ freq: 700, freq2: 300, wave: 'sine', dur: 0.2, vol: 0.12, prio: PRIORITY.tool });
+        break;
+      case 'bell':
+        this.tone({ freq: noteHz('A5'), wave: 'triangle', dur: 1.0, vol: 0.3, prio: PRIORITY.tool });
+        this.tone({ freq: noteHz('E6') * 1.01, wave: 'sine', dur: 0.8, vol: 0.12, prio: PRIORITY.tool });
+        break;
+      case 'disc':
+        this.tone({ freq: 400, freq2: 1600, wave: 'pulse25', dur: 0.18, vol: 0.15, prio: PRIORITY.tool });
+        break;
+      case 'swap':
+        this.arp(['C6', 'G6'], 0.05, 'pulse50', 0.08, 0.15);
+        break;
+      case 'slide':
+        this.noiseHit({ dur: 0.08, vol: 0.1, freq: 5000, type: 'highpass', prio: PRIORITY.step });
+        break;
+      case 'spit':
+        this.noiseHit({ dur: 0.12, vol: 0.2, freq: 3000, type: 'bandpass', q: 3, prio: PRIORITY.warn });
+        break;
+      case 'alert':
+        this.tone({ freq: noteHz('B5'), wave: 'square', dur: 0.06, vol: 0.12, prio: PRIORITY.warn });
+        this.tone({ freq: noteHz('F6'), wave: 'square', dur: 0.08, vol: 0.12, at: 0.06, prio: PRIORITY.warn });
+        break;
       case 'star':
         this.tone({ freq: noteHz(['C6', 'E6', 'G6'][opts.n || 0]), wave: 'pulse25', dur: 0.25, vol: 0.22, prio: PRIORITY.gem });
         this.tone({ freq: noteHz(['C7', 'E7', 'G7'][opts.n || 0]), wave: 'triangle', dur: 0.3, vol: 0.1, prio: PRIORITY.gem });
@@ -393,7 +452,7 @@ export class AudioEngine {
     }
     if (this.songName === name) return;
     this.songName = name;
-    const def = SONGS[name];
+    const def = songFor(name);
     if (!def) {
       this.song = null;
       return;
@@ -458,6 +517,18 @@ export class AudioEngine {
     } else if (step % 4 === 0) {
       this.tone({ freq: hz(`${root}3`), wave: 'triangle', dur: e * 3, vol: 0.12, at, dest: this.stems.base });
     }
+    // Tanpura-like drone for India: root and fifth, held.
+    if (def.drone && step % 16 === 0) {
+      this.tone({ freq: hz(`${root}3`), wave: 'triangle', dur: e * 15, vol: 0.08, attack: 0.3, at, dest: this.stems.base });
+      this.tone({ freq: hz(`${root}3`) * 1.5, wave: 'triangle', dur: e * 15, vol: 0.05, attack: 0.3, at, dest: this.stems.base });
+    }
+    // Vault synthwave arpeggio.
+    if (def.arp) {
+      const f = hz(`${root}4`) * 2 ** ([0, 7, 12, 7][step % 4] / 12);
+      this.tone({ freq: f, wave: 'pulse25', dur: e * 0.5, vol: 0.05, at, dest: this.stems.base });
+    }
+    // Marching snare for the keep.
+    if (def.march && step % 8 === 6) this.noiseHit({ dur: 0.06, vol: 0.12, freq: 2500, type: 'bandpass', at, dest: this.stems.base });
     // Temple percussion: always on title/boss, otherwise the danger stem.
     const drumDest = def.drums ? this.stems.base : this.stems.danger;
     if (!def.musicBox) {

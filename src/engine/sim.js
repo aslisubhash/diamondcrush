@@ -3,15 +3,24 @@
 // Tick order follows GDD 3.4.
 
 import {
-  DIRS, OPPOSITE, CLOCKWISE, HERO_FLOORS, OBJECT_FLOORS, ENEMY_FLOORS, FILLABLE,
-  FALLERS, ROUND, PUSHABLE, HEAVY, COLLECTIBLE, DIFFICULTIES, ENEMY_NAMES, OBJECT_NAMES,
+  DIRS, OPPOSITE, CLOCKWISE, FALLERS, ROUND, PUSHABLE, HEAVY, COLLECTIBLE,
+  DIFFICULTIES, ENEMY_NAMES, OBJECT_NAMES,
 } from './constants.js';
 import { parseLevel } from './level.js';
+import {
+  idx, inb, emit, enemyAt, heroAt, partnerAt, bodyAt, bossAt, exitOpen, gateOpen, wellWet, effFloor,
+  heroCanEnter, objectCanEnter, hurt, killEnemy, returnStolen,
+} from './shared.js';
+import { enemiesAct, crushable } from './enemies.js';
+import { makeBoss, bossAct, bossDamage, bossRefill, lairImpact, gearJams } from './bosses.js';
+
+export { enemyAt, exitOpen, gateOpen, wellWet, hurt, effFloor };
 
 export function createState(level, opts = {}) {
   const diff = DIFFICULTIES[opts.difficulty || 'classic'];
   const p = parseLevel(level);
   const maxHearts = opts.maxHearts ?? diff.hearts;
+  const lead = opts.lead || level.lead || 'kai';
   const s = {
     levelId: level.id,
     w: p.w,
@@ -22,13 +31,14 @@ export function createState(level, opts = {}) {
     enemies: p.enemies,
     nextId: p.nextId,
     hero: {
-      x: p.hero.x, y: p.hero.y, dir: 'D',
+      x: p.hero.x, y: p.hero.y, dir: 'D', who: lead,
       hearts: maxHearts, maxHearts, invul: 0,
-      keys: {}, windup: null,
+      keys: {}, windup: null, slide: null, bell: 3,
       tools: [...new Set([...(opts.tools || []), ...(level.tools || [])])],
       tool: 0,
       stolen: 0,
     },
+    partner: p.partner ? { x: p.partner.x, y: p.partner.y, dir: 'D', who: lead === 'kai' ? 'meera' : 'kai' } : null,
     start: { x: p.hero.x, y: p.hero.y },
     gems: 0,
     gemsTotal: p.gemsTotal,
@@ -42,20 +52,26 @@ export function createState(level, opts = {}) {
     coins: 0,
     levers: {},
     chan: {},
+    kolamDone: {},
+    chanStart: {},
     rules: { crush: diff.crush, wobble: diff.wobble },
     status: 'play', // play | won | dead
     exitKind: null, // 'exit' | 'secret'
     lastHurt: '',
     events: [],
     newTools: [],
+    heroLog: [],
+    heroMoved: null,
+    venom: [],
+    fire: [],
+    beams: [],
+    disc: null,
+    freezeUntil: 0,
+    dark: !!level.dark,
     boss: null,
   };
   if (p.boss) {
-    s.boss = {
-      t: p.boss.t, x: p.boss.x, y: p.boss.y, dir: 'R',
-      hp: 5, maxHp: 5, phase: 1, alive: true,
-      clock: 0, strike: null, sweep: null, trail: [],
-    };
+    s.boss = makeBoss(p.boss.t, p.boss.x, p.boss.y);
     // Remember boulders and earth so the arena can refill between phases.
     s.bossSpawns = [];
     s.bossEarth = [];
@@ -63,8 +79,11 @@ export function createState(level, opts = {}) {
     p.floor.forEach((f, i) => { if (f === 'earth') s.bossEarth.push(i); });
   }
   for (const [i, m] of Object.entries(s.meta)) {
-    if (s.floor[i] === 'lever' && m.on) s.levers[m.ch] = !s.levers[m.ch];
+    const f = s.floor[i];
+    if ((f === 'lever' || f === 'switch') && m.on) s.levers[m.ch] = !s.levers[m.ch];
   }
+  // Start with the most recently found tool in hand.
+  s.hero.tool = Math.max(0, s.hero.tools.length - 1);
   updateTriggers(s);
   return s;
 }
@@ -73,125 +92,30 @@ export function cloneState(s) {
   return structuredClone(s);
 }
 
-// ---------- helpers ----------
-
-const idx = (s, x, y) => y * s.w + x;
-const inb = (s, x, y) => x >= 0 && y >= 0 && x < s.w && y < s.h;
-export const enemyAt = (s, x, y) => s.enemies.find((e) => e.alive && e.x === x && e.y === y) || null;
-const heroAt = (s, x, y) => s.hero.x === x && s.hero.y === y;
-
-function emit(s, type, x, y, extra) {
-  s.events.push({ type, x, y, ...extra });
-}
-
-export function exitOpen(s) {
-  return s.gems >= s.quota && (!s.boss || !s.boss.alive);
-}
-
-export function gateOpen(s, i) {
-  const m = s.meta[i];
-  if (!m) return false;
-  if (m.held) return true;
-  const on = !!s.chan[m.ch];
-  return m.inv ? !on : on;
-}
-
-function heroCanEnter(s, i) {
-  const f = s.floor[i];
-  if (!HERO_FLOORS.has(f)) return false;
-  if (f === 'gate' && !gateOpen(s, i)) return false;
-  if (f === 'exit' && !exitOpen(s)) return false;
-  return true;
-}
-
-function objectCanEnter(s, x, y, o) {
-  if (!inb(s, x, y)) return false;
-  const i = idx(s, x, y);
-  const f = s.floor[i];
-  if (!OBJECT_FLOORS.has(f)) return false;
-  if (f === 'gate' && !gateOpen(s, i)) return false;
-  if (s.obj[i] || heroAt(s, x, y) || enemyAt(s, x, y)) return false;
-  // Only heavy objects sink into pits and water; gems stop at the edge.
-  if (FILLABLE.has(f) && !HEAVY.has(o.t)) return false;
-  if (f === 'lair' && !FALLERS.has(o.t) && !HEAVY.has(o.t)) return false;
-  return true;
-}
-
-function enemyCanEnter(s, x, y) {
-  if (!inb(s, x, y)) return false;
-  const i = idx(s, x, y);
-  const f = s.floor[i];
-  if (!ENEMY_FLOORS.has(f)) return false;
-  if (f === 'gate' && !gateOpen(s, i)) return false;
-  if (s.obj[i] || enemyAt(s, x, y)) return false;
-  return true;
-}
-
-// Moves an object between cells and applies fill-ins (3.3 rule 10) and
-// boss-lair impacts.
-function moveObject(s, from, to) {
-  const o = s.obj[from];
-  s.obj[from] = null;
-  const x = to % s.w;
-  const y = (to - x) / s.w;
-  const f = s.floor[to];
-  if (FILLABLE.has(f) && HEAVY.has(o.t)) {
-    s.floor[to] = 'filled';
-    s.meta[to] = { was: f };
-    emit(s, 'fill', x, y, { obj: o.t, was: f });
-    return null;
-  }
-  if (f === 'lair') {
-    lairImpact(s, x, y, o);
-    return null;
-  }
-  s.obj[to] = o;
-  return o;
-}
-
-export function hurt(s, amount, cause) {
-  const h = s.hero;
-  if (h.invul > 0 || s.status !== 'play') return false;
-  h.hearts = Math.max(0, h.hearts - amount);
-  h.invul = 2;
-  s.hurts++;
-  s.lastHurt = cause;
-  emit(s, 'hurt', h.x, h.y, { cause, amount });
-  if (h.hearts <= 0) {
-    s.status = 'dead';
-    emit(s, 'death', h.x, h.y, { cause });
-  }
-  return true;
-}
-
-function killEnemy(s, e, by) {
-  e.alive = false;
-  s.kills++;
-  s.coins += 5;
-  emit(s, 'kill', e.x, e.y, { enemy: e.t, by });
-  if (e.t === 'monkey' && e.carrying) {
-    e.carrying = false;
-    returnStolen(s, e);
-  }
-}
-
-function returnStolen(s, e) {
-  s.gems++;
-  s.hero.stolen = Math.max(0, s.hero.stolen - 1);
-  emit(s, 'gemBack', e.x, e.y);
-}
-
 // ---------- public tick entry ----------
 
-// action: { type: 'move', dir } | { type: 'tool' } | null (background tick).
-// Returns true when a world tick happened.
+// action: { type: 'move', dir } | { type: 'tool' } | { type: 'swap' } |
+// null (background tick). Returns true when a world tick happened.
 export function act(s, action) {
   if (s.status !== 'play') return false;
   s.events = [];
-  let acted = true;
-  if (action) {
-    acted = heroAct(s, action);
-    if (!acted) return false;
+  s.heroMoved = null;
+  s.disc = null;
+  if (s.hero.slide) {
+    // Sliding on ice: input is ignored until the hero stops.
+    slideHero(s);
+  } else if (action) {
+    const prevWind = s.hero.windup;
+    s.hero.windup = null;
+    let ok = false;
+    if (action.type === 'move') ok = heroMove(s, action.dir, prevWind);
+    else if (action.type === 'tool') ok = useTool(s);
+    else if (action.type === 'swap') ok = swapHeroes(s);
+    else if (action.type === 'wait') ok = true;
+    if (!ok) {
+      s.hero.windup = s.hero.windup || null;
+      return false;
+    }
   }
   worldTick(s);
   return true;
@@ -199,8 +123,12 @@ export function act(s, action) {
 
 function worldTick(s) {
   s.tick++;
+  s.venom = [];
+  s.fire = [];
+  const moved = new Set();
   if (s.status === 'play') updateTriggers(s); // 3
-  if (s.status === 'play') physics(s); // 4
+  if (s.status === 'play') carry(s, moved); // conveyors, wind, ice slides
+  if (s.status === 'play') physics(s, moved); // 4
   if (s.status === 'play') enemiesAct(s); // 5
   if (s.status === 'play') bossAct(s);
   if (s.status === 'play') hazards(s); // 6
@@ -217,19 +145,23 @@ function worldTick(s) {
 function win(s, kind) {
   s.status = 'won';
   s.exitKind = kind;
+  s.hero.slide = null;
   emit(s, 'win', s.hero.x, s.hero.y, { kind });
 }
 
 // ---------- 2. hero ----------
 
-function heroAct(s, action) {
+function swapHeroes(s) {
+  const p = s.partner;
+  if (!p) return false;
   const h = s.hero;
-  const prevWind = h.windup;
-  h.windup = null;
-  if (action.type === 'move') return heroMove(s, action.dir, prevWind);
-  if (action.type === 'tool') return useTool(s);
-  if (action.type === 'wait') return true;
-  return false;
+  [h.x, p.x] = [p.x, h.x];
+  [h.y, p.y] = [p.y, h.y];
+  [h.dir, p.dir] = [p.dir, h.dir];
+  [h.who, p.who] = [p.who, h.who];
+  h.slide = null;
+  emit(s, 'swap', h.x, h.y, { who: h.who });
+  return true;
 }
 
 function heroMove(s, dir, prevWind) {
@@ -242,6 +174,11 @@ function heroMove(s, dir, prevWind) {
   const ti = idx(s, tx, ty);
   const f = s.floor[ti];
 
+  if (partnerAt(s, tx, ty)) return false;
+  if (bossAt(s, tx, ty)) {
+    hurt(s, 1, `Struck by ${ENEMY_NAMES[s.boss.t]}`);
+    return true;
+  }
   const e = enemyAt(s, tx, ty);
   if (e) {
     if (e.t === 'monkey') {
@@ -254,7 +191,8 @@ function heroMove(s, dir, prevWind) {
       }
       return false;
     }
-    hurt(s, 1, `Bitten by ${ENEMY_NAMES[e.t] || 'an enemy'}`);
+    if (e.t === 'echo' || e.t === 'spirit') return false;
+    hurt(s, 1, `Hurt by ${ENEMY_NAMES[e.t] || 'an enemy'}`);
     return true;
   }
 
@@ -274,7 +212,6 @@ function heroMove(s, dir, prevWind) {
     h.keys[color]--;
     s.floor[ti] = 'floor';
     emit(s, 'door', tx, ty, { color });
-    // The hero steps into the doorway on the same step.
   } else if (f === 'exit' && !exitOpen(s)) {
     emit(s, 'exitShut', tx, ty);
     return false;
@@ -288,51 +225,155 @@ function heroMove(s, dir, prevWind) {
       collect(s, o, tx, ty);
       s.obj[ti] = null;
     } else if (PUSHABLE.has(o.t)) {
-      if (o.st === 'fall') return false;
-      const fx = tx + dx;
-      const fy = ty + dy;
-      if (!objectCanEnter(s, fx, fy, o)) {
-        emit(s, 'blocked', tx, ty);
-        return false;
-      }
-      // Boulders are heavy: the hero leans in for one step first (3.3 rule 7).
-      if (o.t === 'boulder' && !(prevWind && prevWind.dir === dir && prevWind.x === h.x && prevWind.y === h.y)) {
-        h.windup = { dir, x: h.x, y: h.y };
-        emit(s, 'lean', tx, ty, { dir });
-        return true;
-      }
-      const moved = moveObject(s, ti, idx(s, fx, fy));
-      if (moved) moved.st = 'rest';
-      emit(s, 'push', fx, fy, { obj: o.t, dir });
+      if (!push(s, o, tx, ty, dir, prevWind)) return s.hero.windup !== null;
     } else {
       return false;
     }
   }
 
-  if (f === 'earth') {
+  if (s.floor[ti] === 'earth') {
     s.floor[ti] = 'floor';
     emit(s, 'dig', tx, ty);
-  } else if (f === 'false') {
+  } else if (s.floor[ti] === 'false') {
     // A false wall crumbles away once walked through, revealing the secret.
     s.floor[ti] = 'floor';
     emit(s, 'secret', tx, ty);
   }
+  leaveCell(s);
+  h.x = tx;
+  h.y = ty;
+  s.moves++;
+  s.heroMoved = dir;
+  s.heroLog.push(dir);
+  emit(s, 'step', tx, ty, { floor: s.floor[ti] });
+  enterCell(s, dir);
+  return true;
+}
+
+// Pushing. Returns true when the hero may step into the object's cell.
+function push(s, o, tx, ty, dir, prevWind) {
+  const h = s.hero;
+  const [dx, dy] = DIRS[dir];
+  if (o.st === 'fall' || o.slide) return false;
+  const fx = tx + dx;
+  const fy = ty + dy;
+  const gauntlet = h.tools.includes('gauntlet');
+  const fi = inb(s, fx, fy) ? idx(s, fx, fy) : -1;
+  // Frostfang takes damage from rocks rammed into it.
+  if (fi >= 0 && bossAt(s, fx, fy) && s.boss.t === 'frost' && HEAVY.has(o.t)) {
+    s.obj[idx(s, tx, ty)] = null;
+    emit(s, 'shatter', fx, fy, { obj: o.t });
+    bossDamage(s, 'rock');
+    return true;
+  }
+  let chain = null;
+  if (!objectCanEnter(s, fx, fy, o)) {
+    // The power gauntlet shoves two blocks in a row.
+    const o2 = fi >= 0 ? s.obj[fi] : null;
+    const gx = fx + dx;
+    const gy = fy + dy;
+    if (gauntlet && o2 && PUSHABLE.has(o2.t) && o2.st !== 'fall' && !o2.slide && objectCanEnter(s, gx, gy, o2)) {
+      chain = o2;
+    } else {
+      emit(s, 'blocked', tx, ty);
+      return false;
+    }
+  }
+  // Boulders are heavy: the hero leans in for one step first (3.3 rule 7).
+  if ((o.t === 'boulder' || (chain && chain.t === 'boulder')) && !gauntlet &&
+      !(prevWind && prevWind.dir === dir && prevWind.x === h.x && prevWind.y === h.y)) {
+    h.windup = { dir, x: h.x, y: h.y };
+    emit(s, 'lean', tx, ty, { dir });
+    return false;
+  }
+  if (chain) {
+    const m2 = moveObject(s, fi, idx(s, fx + dx, fy + dy));
+    if (m2) startSlide(s, m2, fx + dx, fy + dy, dir);
+  }
+  const moved = moveObject(s, idx(s, tx, ty), fi);
+  if (moved) startSlide(s, moved, fx, fy, dir);
+  emit(s, 'push', fx, fy, { obj: o.t, dir });
+  return true;
+}
+
+function startSlide(s, o, x, y, dir) {
+  o.st = 'rest';
+  if (s.floor[idx(s, x, y)] === 'ice') o.slide = dir;
+}
+
+function leaveCell(s) {
+  const h = s.hero;
   const fromI = idx(s, h.x, h.y);
   if (s.floor[fromI] === 'weak') {
     s.floor[fromI] = 'pit';
     emit(s, 'crumble', h.x, h.y);
   }
+}
+
+function enterCell(s, dir) {
+  const h = s.hero;
+  const i = idx(s, h.x, h.y);
+  const f = s.floor[i];
+  const m = s.meta[i];
+  if (f === 'idol' && !m.active) {
+    m.active = true;
+    h.bell = 3;
+    emit(s, 'checkpoint', h.x, h.y);
+  } else if (f === 'ice' && dir) {
+    h.slide = dir;
+  } else if (f === 'kolam' && !s.kolamDone[m.ch]) {
+    if (m.traced) {
+      for (const k of Object.keys(s.meta)) {
+        const km = s.meta[k];
+        if (s.floor[k] === 'kolam' && km.ch === m.ch) km.traced = false;
+      }
+      emit(s, 'kolamReset', h.x, h.y);
+    } else {
+      m.traced = true;
+      const all = Object.entries(s.meta).filter(([k, km]) => s.floor[k] === 'kolam' && km.ch === m.ch);
+      if (all.every(([, km]) => km.traced)) {
+        s.kolamDone[m.ch] = true;
+        emit(s, 'kolamDone', h.x, h.y);
+      } else emit(s, 'trace', h.x, h.y);
+    }
+  }
+}
+
+// One tile of an ice slide. Sliding stops at anything solid.
+function slideHero(s) {
+  const h = s.hero;
+  const dir = h.slide;
+  const [dx, dy] = DIRS[dir];
+  const tx = h.x + dx;
+  const ty = h.y + dy;
+  const stop = () => {
+    h.slide = null;
+    emit(s, 'slideStop', h.x, h.y);
+  };
+  if (!inb(s, tx, ty) || partnerAt(s, tx, ty)) return stop();
+  const ti = idx(s, tx, ty);
+  const e = enemyAt(s, tx, ty);
+  if (e || bossAt(s, tx, ty)) {
+    if (!e || crushable(e)) hurt(s, 1, `Slid into ${ENEMY_NAMES[e ? e.t : s.boss.t]}`);
+    return stop();
+  }
+  if (!heroCanEnter(s, ti)) return stop();
+  const o = s.obj[ti];
+  if (o) {
+    if (!COLLECTIBLE.has(o.t)) return stop();
+    collect(s, o, tx, ty);
+    s.obj[ti] = null;
+  }
+  leaveCell(s);
   h.x = tx;
   h.y = ty;
-  s.moves++;
-  emit(s, 'step', tx, ty, { floor: s.floor[ti] });
-
-  const nf = s.floor[ti];
-  if (nf === 'idol' && !s.meta[ti].active) {
-    s.meta[ti].active = true;
-    emit(s, 'checkpoint', tx, ty);
+  emit(s, 'slide', tx, ty);
+  if (s.floor[ti] !== 'ice') {
+    h.slide = null;
+    enterCell(s, null);
+  } else {
+    enterCell(s, dir);
   }
-  return true;
 }
 
 function collect(s, o, x, y) {
@@ -370,98 +411,439 @@ export function cycleTool(s, step = 1) {
   return true;
 }
 
+// Moves an object between cells and applies fill-ins (3.3 rule 10) and
+// boss-lair impacts. Returns the object if it still exists.
+function moveObject(s, from, to) {
+  const o = s.obj[from];
+  s.obj[from] = null;
+  const x = to % s.w;
+  const y = (to - x) / s.w;
+  const f = effFloor(s, to);
+  if ((f === 'pit' || f === 'water') && HEAVY.has(o.t)) {
+    if (s.floor[to] === 'well') {
+      // Stepwell: rocks sink to the bottom and wait for the water to drop.
+      s.obj[to] = o;
+      o.sunk = true;
+      emit(s, 'splash', x, y);
+      return o;
+    }
+    const was = s.floor[to];
+    s.floor[to] = 'filled';
+    s.meta[to] = { was };
+    emit(s, 'fill', x, y, { obj: o.t, was });
+    return null;
+  }
+  if (f === 'lair') {
+    lairImpact(s, x, y, o);
+    return null;
+  }
+  s.obj[to] = o;
+  return o;
+}
+
 function useTool(s) {
   const tool = currentTool(s);
   const h = s.hero;
   const [dx, dy] = DIRS[h.dir];
   const tx = h.x + dx;
   const ty = h.y + dy;
-  if (!tool || !inb(s, tx, ty)) return false;
+  if (!tool) return false;
+  if (tool === 'bell') {
+    if (h.bell <= 0) {
+      emit(s, 'clang', h.x, h.y, { empty: true });
+      return false;
+    }
+    h.bell--;
+    s.freezeUntil = s.tick + 3;
+    emit(s, 'bell', h.x, h.y, { left: h.bell });
+    return true;
+  }
+  if (tool === 'disc') return throwDisc(s);
+  if (!inb(s, tx, ty)) return false;
   const ti = idx(s, tx, ty);
+  const o = s.obj[ti];
+  const f = s.floor[ti];
   if (tool === 'hammer') {
-    if (s.floor[ti] === 'cracked') {
+    if (f === 'cracked') {
       s.floor[ti] = 'floor';
       emit(s, 'smash', tx, ty);
       return true;
     }
-    const o = s.obj[ti];
     if (o && o.t === 'boulder' && o.st !== 'fall') {
       s.obj[ti] = null;
       emit(s, 'smash', tx, ty, { obj: 'boulder' });
       return true;
     }
-    emit(s, 'clang', tx, ty);
-    return false;
-  }
-  if (tool === 'grapple') {
+  } else if (tool === 'grapple') {
     // Pull the object in front one tile towards the hero; the hero steps back.
-    const o = s.obj[ti];
     const bx = h.x - dx;
     const by = h.y - dy;
-    if (!o || !PUSHABLE.has(o.t) || o.st === 'fall' || !inb(s, bx, by)) return false;
-    const bi = idx(s, bx, by);
-    if (!heroCanEnter(s, bi) || s.obj[bi] || enemyAt(s, bx, by)) return false;
-    const fromI = idx(s, h.x, h.y);
-    h.x = bx;
-    h.y = by;
-    s.obj[fromI] = o;
-    s.obj[ti] = null;
-    o.st = 'rest';
-    s.moves++;
-    emit(s, 'pull', tx, ty, { obj: o.t });
-    return true;
+    if (o && PUSHABLE.has(o.t) && o.st !== 'fall' && !o.slide && inb(s, bx, by)) {
+      const bi = idx(s, bx, by);
+      if (heroCanEnter(s, bi) && !s.obj[bi] && !enemyAt(s, bx, by) && !bodyAt(s, bx, by) && !bossAt(s, bx, by)) {
+        const fromI = idx(s, h.x, h.y);
+        leaveCell(s);
+        h.x = bx;
+        h.y = by;
+        s.obj[fromI] = o;
+        s.obj[ti] = null;
+        o.st = 'rest';
+        s.moves++;
+        emit(s, 'pull', tx, ty, { obj: o.t });
+        return true;
+      }
+    }
+  } else if (tool === 'torch') {
+    if (f === 'brazier' && !s.meta[ti].lit) {
+      s.meta[ti].lit = true;
+      emit(s, 'ignite', tx, ty);
+      return true;
+    }
+    if (o && o.t === 'crate') {
+      s.obj[ti] = null;
+      emit(s, 'burn', tx, ty);
+      return true;
+    }
+    const e = enemyAt(s, tx, ty);
+    if (e && e.t === 'bat') {
+      e.dx = dx || -e.dx;
+      e.dy = dy || -e.dy;
+      emit(s, 'scare', tx, ty);
+      return true;
+    }
+  } else if (tool === 'frost') {
+    const m = s.meta[ti];
+    if (f === 'water' && !o) {
+      s.floor[ti] = 'ice';
+      s.meta[ti] = { melt: s.tick + 11, frost: true };
+      emit(s, 'freeze', tx, ty);
+      return true;
+    }
+    if (f === 'ice' && m && m.frost) {
+      m.melt = s.tick + 11;
+      emit(s, 'freeze', tx, ty);
+      return true;
+    }
+  } else if (tool === 'mirror') {
+    if (o && o.t === 'mirror') {
+      o.o = o.o === '/' ? '\\' : '/';
+      emit(s, 'turnMirror', tx, ty);
+      return true;
+    }
   }
+  emit(s, 'clang', tx, ty);
   return false;
+}
+
+// Chakra disc: flies straight, glances off mirrors, flips switches it
+// passes and the first lever it hits, and knocks out small enemies.
+function throwDisc(s) {
+  const h = s.hero;
+  let dir = h.dir;
+  let x = h.x;
+  let y = h.y;
+  const path = [];
+  for (let n = 0; n < 40; n++) {
+    const [dx, dy] = DIRS[dir];
+    x += dx;
+    y += dy;
+    if (!inb(s, x, y)) break;
+    const i = idx(s, x, y);
+    const f = effFloor(s, i);
+    if (f === 'lever') {
+      const m = s.meta[i];
+      m.on = !m.on;
+      s.levers[m.ch] = !s.levers[m.ch];
+      emit(s, 'lever', x, y, { on: m.on });
+      path.push(i);
+      break;
+    }
+    const o = s.obj[i];
+    if (o && o.t === 'mirror') {
+      path.push(i);
+      dir = reflect(dir, o.o);
+      continue;
+    }
+    if (o || bodyAt(s, x, y)) break;
+    const e = enemyAt(s, x, y);
+    if (e) {
+      if (crushable(e)) killEnemy(s, e, 'disc');
+      path.push(i);
+      break;
+    }
+    if (!['floor', 'filled', 'spikes', 'plate', 'weak', 'idol', 'ice', 'conv', 'wind', 'blade', 'grass', 'kolam', 'switch', 'water', 'pit', 'exit', 'sexit'].includes(f)) break;
+    path.push(i);
+    if (f === 'switch') {
+      const m = s.meta[i];
+      m.on = !m.on;
+      s.levers[m.ch] = !s.levers[m.ch];
+      emit(s, 'switch', x, y, { on: m.on });
+    }
+  }
+  s.disc = path;
+  emit(s, 'disc', h.x, h.y, { dir: h.dir });
+  return true;
+}
+
+export function reflect(dir, o) {
+  if (o === '/') return { R: 'U', U: 'R', L: 'D', D: 'L' }[dir];
+  return { R: 'D', D: 'R', L: 'U', U: 'L' }[dir];
 }
 
 // ---------- 3. triggers ----------
 
+const BEAM_PASS = new Set(['floor', 'filled', 'spikes', 'plate', 'weak', 'idol', 'ice', 'conv', 'wind', 'blade', 'grass', 'kolam', 'switch', 'water', 'pit', 'exit', 'sexit', 'lair', 'den']);
+
+export function lampDir(s, i) {
+  const m = s.meta[i];
+  if (!m.rotate) return m.dir;
+  const k = Math.floor((s.tick + (m.offset || 0)) / m.rotate);
+  return CLOCKWISE[(CLOCKWISE.indexOf(m.dir) + k) % 4];
+}
+
+// Light beams and lasers: straight lines that turn at mirrors.
+function traceBeams(s) {
+  s.beams = [];
+  for (const [k, m] of Object.entries(s.meta)) {
+    if (s.floor[k] === 'sensor') m.hit = false;
+  }
+  const b = s.boss;
+  let bossLit = false;
+  for (const [k, m] of Object.entries(s.meta)) {
+    const i0 = +k;
+    if (s.floor[i0] !== 'lamp') continue;
+    if (m.ch && !s.chan[m.ch]) continue;
+    let dir = lampDir(s, i0);
+    let x = i0 % s.w;
+    let y = (i0 - x) / s.w;
+    const cells = [];
+    for (let n = 0; n < 80; n++) {
+      const [dx, dy] = DIRS[dir];
+      x += dx;
+      y += dy;
+      if (!inb(s, x, y)) break;
+      const i = idx(s, x, y);
+      const f = s.floor[i];
+      if (f === 'sensor') {
+        s.meta[i].hit = true;
+        cells.push(i);
+        break;
+      }
+      if (b && b.alive && b.t !== 'naga' && b.x === x && b.y === y) {
+        cells.push(i);
+        if (b.t === 'frost' || m.laser) bossLit = true;
+        break;
+      }
+      const o = s.obj[i];
+      if (o && o.t === 'mirror') {
+        cells.push(i);
+        dir = reflect(dir, o.o);
+        continue;
+      }
+      if (o) break;
+      if (bodyAt(s, x, y)) {
+        cells.push(i);
+        if (m.laser && heroAt(s, x, y)) hurt(s, 1, 'Burned by a laser');
+        else if (m.laser) hurt(s, 1, 'Burned by a laser');
+        break;
+      }
+      const e = enemyAt(s, x, y);
+      if (e) {
+        cells.push(i);
+        if (m.laser && crushable(e)) killEnemy(s, e, 'laser');
+        break;
+      }
+      const ef = effFloor(s, i);
+      if (!BEAM_PASS.has(ef)) break;
+      cells.push(i);
+    }
+    s.beams.push({ from: i0, cells, laser: !!m.laser });
+  }
+  // Frostfang melts under concentrated sunlight (one hit per exposure).
+  if (b && b.alive) {
+    if (bossLit && !b.beamLock) {
+      b.beamLock = true;
+      bossDamage(s, 'light');
+    } else if (!bossLit) b.beamLock = false;
+  }
+}
+
 function updateTriggers(s) {
+  traceBeams(s);
   const pressed = {};
+  const groups = {};
+  const group = (ch) => (groups[ch] = groups[ch] || { b: 0, bl: 0, se: 0, sl: 0, k: 0 });
   for (const [k, m] of Object.entries(s.meta)) {
     const i = +k;
-    if (s.floor[i] !== 'plate') continue;
+    const f = s.floor[i];
     const x = i % s.w;
     const y = (i - x) / s.w;
-    const down = !!s.obj[i] || heroAt(s, x, y);
-    if (down !== !!m.down) emit(s, down ? 'plateDown' : 'plateUp', x, y);
-    m.down = down;
-    if (down) pressed[m.ch] = true;
+    if (f === 'plate') {
+      const o = s.obj[i];
+      const heavy = o && (!m.only || o.t === m.only);
+      const down = !!heavy || (!m.only && (bodyAt(s, x, y) || !!enemyAt(s, x, y)));
+      if (down !== !!m.down) emit(s, down ? 'plateDown' : 'plateUp', x, y);
+      m.down = down;
+      if (m.all) {
+        // Twin plates: all of them at once, and the mechanism locks open.
+        const g = group(m.ch);
+        g.all = (g.all || 0) + 1;
+        if (down) g.allDown = (g.allDown || 0) + 1;
+      } else if (down) pressed[m.ch] = true;
+    } else if (f === 'brazier') {
+      const g = group(m.ch);
+      g.b++;
+      if (m.lit) g.bl++;
+    } else if (f === 'sensor') {
+      const g = group(m.ch);
+      g.se++;
+      if (m.hit) g.sl++;
+      if (m.hit !== m.wasHit) emit(s, m.hit ? 'sensorOn' : 'sensorOff', x, y);
+      m.wasHit = m.hit;
+    } else if (f === 'kolam') {
+      group(m.ch).k++;
+    }
   }
-  const chans = new Set([...Object.keys(pressed), ...Object.keys(s.levers)]);
+  const chans = new Set([...Object.keys(pressed), ...Object.keys(s.levers), ...Object.keys(groups)]);
   for (const m of Object.values(s.meta)) if (m.ch) chans.add(m.ch);
   for (const ch of chans) {
-    const on = !!pressed[ch] !== !!s.levers[ch];
+    const g = groups[ch];
+    if (g && g.all && g.allDown === g.all && !s.kolamDone[ch]) {
+      s.kolamDone[ch] = true;
+      emit(s, 'latch', 0, 0, { ch });
+    }
+    const active = !!(pressed[ch] || (g && g.all && s.kolamDone[ch]) ||
+      (g && g.b > 0 && g.bl === g.b) ||
+      (g && g.se > 0 && g.sl === g.se) ||
+      (g && g.k > 0 && s.kolamDone[ch]));
+    const on = active !== !!s.levers[ch];
+    if (on && s.chanStart[ch] === undefined) s.chanStart[ch] = s.tick;
     s.chan[ch] = on;
   }
-  // Gates cannot close on something standing in them.
+  // Gates and bridges cannot close on something standing in them; wells
+  // cannot flood a cell someone stands in.
   for (const [k, m] of Object.entries(s.meta)) {
     const i = +k;
-    if (s.floor[i] !== 'gate') continue;
+    const f = s.floor[i];
+    if (f !== 'gate' && f !== 'bridge' && f !== 'well') continue;
     const x = i % s.w;
     const y = (i - x) / s.w;
+    const occupied = (f === 'well' ? false : !!s.obj[i]) || bodyAt(s, x, y) || !!enemyAt(s, x, y);
     m.held = false;
+    if (f === 'well') {
+      let wet = wellWet(s, i);
+      if (wet && occupied) {
+        m.held = true;
+        wet = false;
+      }
+      if (m.wet !== undefined && m.wet !== wet) emit(s, wet ? 'flood' : 'drain', x, y);
+      m.wet = wet;
+      continue;
+    }
     let open = gateOpen(s, i);
-    if (!open && (s.obj[i] || heroAt(s, x, y) || enemyAt(s, x, y))) {
+    if (!open && occupied) {
       open = true;
       m.held = true;
     }
     if (m.open !== undefined && m.open !== open) emit(s, open ? 'gateOpen' : 'gateClose', x, y);
     m.open = open;
   }
+  gearJams(s);
+}
+
+// ---------- conveyors, wind and ice slides ----------
+
+// Belts linked to a channel run backwards while it is on.
+export function convDir(s, i) {
+  const m = s.meta[i];
+  return m.ch && s.chan[m.ch] ? OPPOSITE[m.dir] : m.dir;
+}
+
+function carry(s, moved) {
+  // Objects sliding on ice.
+  for (let i = 0; i < s.obj.length; i++) {
+    const o = s.obj[i];
+    if (!o || !o.slide || moved.has(o.id)) continue;
+    const x = i % s.w;
+    const y = (i - x) / s.w;
+    const [dx, dy] = DIRS[o.slide];
+    const nx = x + dx;
+    const ny = y + dy;
+    moved.add(o.id);
+    if (bossAt(s, nx, ny) && s.boss.t === 'frost' && HEAVY.has(o.t)) {
+      s.obj[i] = null;
+      emit(s, 'shatter', nx, ny, { obj: o.t });
+      bossDamage(s, 'rock');
+      continue;
+    }
+    const e = inb(s, nx, ny) ? enemyAt(s, nx, ny) : null;
+    if (e && crushable(e) && HEAVY.has(o.t)) {
+      killEnemy(s, e, o.t);
+    }
+    if (!objectCanEnter(s, nx, ny, o)) {
+      o.slide = null;
+      emit(s, 'land', x, y, { obj: o.t, heavy: true, soft: true });
+      continue;
+    }
+    const m = moveObject(s, i, idx(s, nx, ny));
+    if (m && s.floor[idx(s, nx, ny)] !== 'ice') m.slide = null;
+  }
+  // Conveyors move resting objects one tile per tick.
+  const convs = [];
+  for (const [k, m] of Object.entries(s.meta)) {
+    if (s.floor[k] === 'conv') convs.push([+k, convDir(s, +k)]);
+  }
+  for (const [i, dir] of convs) {
+    const o = s.obj[i];
+    if (!o || moved.has(o.id) || o.st === 'fall' || o.st === 'wobble') continue;
+    const x = i % s.w;
+    const y = (i - x) / s.w;
+    const [dx, dy] = DIRS[dir];
+    if (!objectCanEnter(s, x + dx, y + dy, o)) continue;
+    moved.add(o.id);
+    const m = moveObject(s, i, idx(s, x + dx, y + dy));
+    if (m) startSlide(s, m, x + dx, y + dy, dir);
+    emit(s, 'convey', x + dx, y + dy);
+  }
+  // Conveyors and wind push the hero.
+  const h = s.hero;
+  const hi = idx(s, h.x, h.y);
+  const hf = s.floor[hi];
+  if ((hf === 'conv' || hf === 'wind') && !h.slide) {
+    const dir = convDir(s, hi);
+    const [dx, dy] = DIRS[dir];
+    const nx = h.x + dx;
+    const ny = h.y + dy;
+    if (inb(s, nx, ny)) {
+      const ni = idx(s, nx, ny);
+      const o = s.obj[ni];
+      const free = heroCanEnter(s, ni) && !enemyAt(s, nx, ny) && !partnerAt(s, nx, ny) && !bossAt(s, nx, ny) &&
+        (!o || COLLECTIBLE.has(o.t));
+      if (free) {
+        if (o) {
+          collect(s, o, nx, ny);
+          s.obj[ni] = null;
+        }
+        leaveCell(s);
+        h.x = nx;
+        h.y = ny;
+        emit(s, hf === 'wind' ? 'gust' : 'convey', nx, ny, { hero: true });
+        enterCell(s, dir);
+      }
+    }
+  }
 }
 
 // ---------- 4. physics (3.3) ----------
 
-export function physics(s) {
-  const moved = new Set();
+export function physics(s, moved = new Set()) {
   const { w, h } = s;
   // Bottom row first, left to right, so chains always resolve the same way.
   for (let y = h - 1; y >= 0; y--) {
     for (let x = 0; x < w; x++) {
       const i = y * w + x;
       const o = s.obj[i];
-      if (!o || moved.has(o.id) || !FALLERS.has(o.t)) continue;
+      if (!o || moved.has(o.id) || !FALLERS.has(o.t) || o.sunk) continue;
       const wasMoving = o.st === 'fall' || o.st === 'wobble';
       if (y + 1 >= h) {
         o.st = 'rest';
@@ -469,23 +851,40 @@ export function physics(s) {
       }
       const bi = i + w;
 
-      // Something landing on the hero. Resting on the hero's head is safe.
-      if (heroAt(s, x, y + 1)) {
+      // Something landing on an explorer. Resting on a head is safe.
+      if (bodyAt(s, x, y + 1)) {
         if (wasMoving) {
           emit(s, 'land', x, y, { obj: o.t, heavy: o.t !== 'gem' });
           hurt(s, s.rules.crush, `Crushed by ${OBJECT_NAMES[o.t]}`);
           emit(s, 'crush', x, y + 1, { obj: o.t });
+        }
+        if (o.t === 'snow' && wasMoving) {
+          s.obj[i] = null;
+          emit(s, 'poof', x, y);
+          continue;
+        }
+        o.st = 'rest';
+        continue;
+      }
+      if (bossAt(s, x, y + 1)) {
+        if (wasMoving) {
+          s.obj[i] = null;
+          emit(s, 'shatter', x, y + 1, { obj: o.t });
+          if (o.t !== 'snow') bossDamage(s, 'rock');
+          continue;
         }
         o.st = 'rest';
         continue;
       }
       const e = enemyAt(s, x, y + 1);
       if (e) {
-        if (wasMoving) {
+        if (wasMoving && crushable(e)) {
           killEnemy(s, e, o.t);
           const m = moveObject(s, i, bi);
           if (m) m.st = 'fall';
           moved.add(o.id);
+        } else if (!crushable(e)) {
+          o.st = 'rest';
         }
         continue;
       }
@@ -502,6 +901,11 @@ export function physics(s) {
       }
 
       // Supported.
+      if (o.t === 'snow' && wasMoving) {
+        s.obj[i] = null;
+        emit(s, 'poof', x, y);
+        continue;
+      }
       if (o.st === 'fall') emit(s, 'land', x, y, { obj: o.t, heavy: o.t !== 'gem' });
       o.st = 'rest';
 
@@ -511,7 +915,7 @@ export function physics(s) {
         for (const dx of [-1, 1]) {
           const sx = x + dx;
           if (!objectCanEnter(s, sx, y, o) || !objectCanEnter(s, sx, y + 1, o)) continue;
-          if (heroAt(s, sx, y + 1)) continue;
+          if (bodyAt(s, sx, y + 1)) continue;
           if (!wasMoving && s.rules.wobble) {
             o.st = 'wobble';
             emit(s, 'wobble', x, y, { obj: o.t });
@@ -528,223 +932,6 @@ export function physics(s) {
   }
 }
 
-// ---------- 5. enemies (4.1) ----------
-
-function enemiesAct(s) {
-  for (const e of s.enemies) {
-    if (!e.alive) continue;
-    if (e.t === 'snake') snakeAct(s, e);
-    else if (e.t === 'scarab') scarabAct(s, e);
-    else if (e.t === 'monkey') monkeyAct(s, e);
-    if (s.status !== 'play') return;
-  }
-}
-
-function tryEnemyStep(s, e, dir) {
-  const [dx, dy] = DIRS[dir];
-  const nx = e.x + dx;
-  const ny = e.y + dy;
-  if (heroAt(s, nx, ny)) {
-    e.dir = dir;
-    hurt(s, 1, `Bitten by ${ENEMY_NAMES[e.t]}`);
-    emit(s, 'attack', nx, ny, { enemy: e.t });
-    return 'attack';
-  }
-  if (!enemyCanEnter(s, nx, ny)) return false;
-  e.x = nx;
-  e.y = ny;
-  e.dir = dir;
-  return true;
-}
-
-// Back and forth on a line, turning at walls. Moves every other tick.
-function snakeAct(s, e) {
-  if (s.tick % 2) return;
-  const r = tryEnemyStep(s, e, e.dir);
-  if (r === false) {
-    e.dir = OPPOSITE[e.dir];
-    emit(s, 'turn', e.x, e.y);
-  }
-}
-
-// Follows the wall on its left. Moves every other tick.
-function scarabAct(s, e) {
-  if (s.tick % 2 === 0) return;
-  const c = CLOCKWISE.indexOf(e.dir);
-  const order = [CLOCKWISE[(c + 3) % 4], e.dir, CLOCKWISE[(c + 1) % 4], CLOCKWISE[(c + 2) % 4]];
-  for (const d of order) {
-    const r = tryEnemyStep(s, e, d);
-    if (r) return;
-  }
-}
-
-// Wanders its line; steals a gem when next to the hero, then flees.
-function monkeyAct(s, e) {
-  const h = s.hero;
-  const dist = (x, y) => Math.abs(x - h.x) + Math.abs(y - h.y);
-  if (e.calm) return;
-  if (!e.carrying) {
-    if (dist(e.x, e.y) === 1 && s.gems > 0) {
-      e.carrying = true;
-      s.gems--;
-      h.stolen++;
-      emit(s, 'steal', e.x, e.y);
-      monkeyFlee(s, e, dist, false);
-      return;
-    }
-    if (s.tick % 2) return;
-    const [dx, dy] = DIRS[e.dir];
-    if (heroAt(s, e.x + dx, e.y + dy) || !enemyCanEnter(s, e.x + dx, e.y + dy)) {
-      e.dir = OPPOSITE[e.dir];
-      return;
-    }
-    e.x += dx;
-    e.y += dy;
-    return;
-  }
-  monkeyFlee(s, e, dist);
-}
-
-// Fleeing: step to the free neighbour that is furthest from the hero.
-function monkeyFlee(s, e, dist, canYield = true) {
-  let best = null;
-  let bestD = dist(e.x, e.y);
-  for (const d of ['L', 'U', 'R', 'D']) {
-    const [dx, dy] = DIRS[d];
-    const nx = e.x + dx;
-    const ny = e.y + dy;
-    if (!enemyCanEnter(s, nx, ny) || heroAt(s, nx, ny)) continue;
-    const nd = dist(nx, ny);
-    if (nd > bestD) {
-      best = d;
-      bestD = nd;
-    }
-  }
-  if (best) {
-    const [dx, dy] = DIRS[best];
-    e.x += dx;
-    e.y += dy;
-    e.dir = best;
-  } else if (canYield && dist(e.x, e.y) === 1) {
-    // Cornered: it gives up the gem.
-    e.carrying = false;
-    e.calm = true;
-    returnStolen(s, e);
-  }
-}
-
-// ---------- boss: Naga Warden (4.3) ----------
-
-const BOSS_TUNING = {
-  1: { move: 3, strikeEvery: 11, sweepEvery: 0 },
-  2: { move: 2, strikeEvery: 10, sweepEvery: 13 },
-  3: { move: 2, strikeEvery: 8, sweepEvery: 11 },
-};
-
-function bossPhase(hp) {
-  if (hp >= 5) return 1;
-  if (hp >= 3) return 2;
-  return 3;
-}
-
-function lairImpact(s, x, y, o) {
-  const b = s.boss;
-  if (b && b.alive && b.x === x && b.y === y) {
-    b.hp--;
-    b.hurtT = s.tick;
-    b.strike = null;
-    emit(s, 'bossHit', x, y, { hp: b.hp });
-    if (b.hp <= 0) {
-      b.alive = false;
-      b.sweep = null;
-      s.coins += 200;
-      emit(s, 'bossDown', x, y);
-      const ex = s.floor.indexOf('exit');
-      if (ex >= 0) emit(s, 'exitOpen', ex % s.w, Math.floor(ex / s.w));
-      return;
-    }
-    const np = bossPhase(b.hp);
-    if (np !== b.phase) {
-      b.phase = np;
-      b.sweep = null;
-      b.clock = 0;
-      s.hero.hearts = s.hero.maxHearts;
-      emit(s, 'bossPhase', x, y, { phase: np });
-      bossRefill(s, true);
-      emit(s, 'checkpoint', s.hero.x, s.hero.y, { silent: true });
-    }
-  } else {
-    emit(s, 'shatter', x, y, { obj: o.t });
-  }
-}
-
-// Refill boulders (and the earth holding them) so the arena never soft-locks.
-function bossRefill(s, force) {
-  const b = s.boss;
-  if (!force) {
-    const any = s.obj.some((o) => o && o.t === 'boulder');
-    if (any) return;
-  }
-  let placed = false;
-  for (const i of s.bossEarth) {
-    const x = i % s.w;
-    const y = (i - x) / s.w;
-    if (s.floor[i] === 'floor' && !s.obj[i] && !heroAt(s, x, y) && !enemyAt(s, x, y)) s.floor[i] = 'earth';
-  }
-  for (const i of s.bossSpawns) {
-    const x = i % s.w;
-    const y = (i - x) / s.w;
-    if (!s.obj[i] && !heroAt(s, x, y) && s.floor[i] !== 'earth') {
-      s.obj[i] = { id: s.nextId++, t: 'boulder', st: 'rest' };
-      placed = true;
-    }
-  }
-  if (placed) emit(s, 'refill', b.x, b.y);
-}
-
-function bossAct(s) {
-  const b = s.boss;
-  if (!b || !b.alive) return;
-  const t = BOSS_TUNING[b.phase];
-  const h = s.hero;
-  b.clock++;
-
-  // Head strike: telegraph two ticks, then lash up the column.
-  if (b.strike) {
-    b.strike.t--;
-    if (b.strike.t === 0) {
-      emit(s, 'strike', b.strike.x, b.y);
-      if (h.x === b.strike.x && h.y < b.y && h.y >= b.y - 3) hurt(s, 1, 'Struck by the Naga Warden');
-      b.strike = null;
-    }
-  } else if (b.clock % t.strikeEvery === 0) {
-    b.strike = { x: b.x, t: 2 };
-    emit(s, 'strikeWarn', b.x, b.y);
-  } else if (s.tick % t.move === 0) {
-    b.trail.unshift({ x: b.x, y: b.y });
-    b.trail.length = Math.min(b.trail.length, 4);
-    let nx = b.x + (b.dir === 'R' ? 1 : -1);
-    if (!inb(s, nx, b.y) || s.floor[idx(s, nx, b.y)] !== 'lair') {
-      b.dir = b.dir === 'R' ? 'L' : 'R';
-      nx = b.x + (b.dir === 'R' ? 1 : -1);
-    }
-    b.x = nx;
-  }
-
-  // Tail sweep along the row above the lair (phase 2+).
-  if (b.sweep) {
-    b.sweep.t--;
-    if (b.sweep.t === 0) {
-      emit(s, 'sweep', b.x, b.sweep.y);
-      if (h.y === b.sweep.y) hurt(s, 1, "Swept by the Naga Warden's tail");
-      b.sweep = null;
-    }
-  } else if (t.sweepEvery && b.clock % t.sweepEvery === 0) {
-    b.sweep = { y: b.y - 1, t: 3 };
-    emit(s, 'sweepWarn', b.x, b.y - 1);
-  }
-}
-
 // ---------- 6. hazards (4.2) ----------
 
 export function spikePhase(s, i, tick = s.tick) {
@@ -756,22 +943,112 @@ export function spikePhase(s, i, tick = s.tick) {
   return 'down';
 }
 
+const HAZARD_TEXT = { spikes: 'Stabbed by a spike floor', blade: 'Cut by a swinging blade' };
+
 function hazards(s) {
   const h = s.hero;
   const hi = idx(s, h.x, h.y);
   for (const [k, m] of Object.entries(s.meta)) {
     const i = +k;
-    if (s.floor[i] !== 'spikes') continue;
-    const ph = spikePhase(s, i);
-    if (ph !== m.ph) {
-      const x = i % s.w;
-      const y = (i - x) / s.w;
-      if (ph === 'warn') emit(s, 'spikeWarn', x, y);
-      if (ph === 'up') emit(s, 'spikeUp', x, y);
+    const f = s.floor[i];
+    const x = i % s.w;
+    const y = (i - x) / s.w;
+    if (f === 'spikes' || f === 'blade' || f === 'jet' || f === 'vent') {
+      const ph = spikePhase(s, i);
+      if (ph !== m.ph) {
+        if (ph === 'warn') emit(s, f === 'jet' ? 'jetWarn' : f === 'vent' ? 'ventWarn' : 'spikeWarn', x, y);
+        if (ph === 'up' && f !== 'jet' && f !== 'vent') emit(s, 'spikeUp', x, y, { blade: f === 'blade' });
+      }
+      m.ph = ph;
+      if (f === 'jet' && ph === 'up') fireJet(s, i, m);
+      if (f === 'vent' && ph === 'up') avalanche(s, x, y);
+    } else if (f === 'ice' && m.frost && s.tick >= m.melt) {
+      if (!bodyAt(s, x, y) && !enemyAt(s, x, y)) {
+        s.floor[i] = 'water';
+        s.meta[i] = {};
+        emit(s, 'melt', x, y);
+        const o = s.obj[i];
+        if (o && HEAVY.has(o.t)) {
+          s.obj[i] = null;
+          s.floor[i] = 'filled';
+          emit(s, 'fill', x, y, { obj: o.t, was: 'water' });
+        } else if (o) {
+          s.obj[i] = null;
+          emit(s, 'splash', x, y);
+        }
+      }
+    } else if (f === 'collapse' && !m.down) {
+      const t0 = m.ch ? s.chanStart[m.ch] : 0;
+      if (t0 === undefined) continue;
+      const at = t0 + m.at;
+      m.warn = s.tick >= at - 3;
+      if (s.tick >= at) {
+        if (bodyAt(s, x, y)) {
+          if (!m.hurt) {
+            m.hurt = true;
+            hurt(s, 1, 'Fell with the collapsing floor');
+          }
+        } else {
+          m.down = true;
+          const o = s.obj[i];
+          if (o) s.obj[i] = null;
+          emit(s, 'collapse', x, y);
+        }
+      }
     }
-    m.ph = ph;
   }
-  if (s.floor[hi] === 'spikes' && s.meta[hi].ph === 'up') hurt(s, 1, 'Stabbed by a spike floor');
+  if (s.status !== 'play') return;
+  const hf = s.floor[hi];
+  if ((hf === 'spikes' || hf === 'blade') && s.meta[hi].ph === 'up') hurt(s, 1, HAZARD_TEXT[hf]);
+  if (s.fire.includes(hi)) hurt(s, 1, 'Scorched by a fire jet');
+}
+
+// Fire jets throw flame 3 tiles; crates catch and burn after 3 blasts.
+function fireJet(s, i, m) {
+  const [dx, dy] = DIRS[m.dir];
+  let x = i % s.w;
+  let y = (i - x) / s.w;
+  for (let k = 0; k < 3; k++) {
+    x += dx;
+    y += dy;
+    if (!inb(s, x, y)) break;
+    const c = idx(s, x, y);
+    const f = effFloor(s, c);
+    if (!BEAM_PASS.has(f)) break;
+    const o = s.obj[c];
+    if (o) {
+      if (o.t === 'crate') {
+        o.burn = (o.burn || 0) + 1;
+        emit(s, 'scorch', x, y);
+        if (o.burn >= 3) {
+          s.obj[c] = null;
+          emit(s, 'burn', x, y);
+        }
+      }
+      break;
+    }
+    s.fire.push(c);
+    const e = enemyAt(s, x, y);
+    if (e && crushable(e) && e.t !== 'knight') killEnemy(s, e, 'fire');
+    if (partnerAt(s, x, y)) hurt(s, 1, 'Scorched by a fire jet');
+  }
+  emit(s, 'jet', i % s.w, Math.floor(i / s.w));
+}
+
+// Avalanche vents drop a chunk of snow into the cell below.
+function avalanche(s, x, y) {
+  const by = y + 1;
+  if (!inb(s, x, by)) return;
+  const bi = idx(s, x, by);
+  if (bodyAt(s, x, by)) {
+    hurt(s, 1, 'Buried by an avalanche');
+    emit(s, 'poof', x, by);
+    return;
+  }
+  const f = effFloor(s, bi);
+  if (s.obj[bi] || enemyAt(s, x, by) || !['floor', 'filled', 'ice', 'spikes', 'plate', 'grass', 'weak'].includes(f)) return;
+  s.obj[bi] = { id: s.nextId++, t: 'snow', st: 'fall' };
+  emit(s, 'avalanche', x, by);
 }
 
 // ---------- analysis helpers used by clues ----------
@@ -793,7 +1070,6 @@ export function predictFalls(s) {
   sim.obj.forEach((o, i) => {
     if (o && before.has(o.id) && before.get(o.id) !== i) out.push({ from: before.get(o.id), to: i, t: o.t });
   });
-  // Objects that vanished into pits or the lair.
   for (const [id, i] of before) {
     if (!sim.obj.some((o) => o && o.id === id)) out.push({ from: i, to: -1, t: s.obj[i].t });
   }
@@ -809,3 +1085,5 @@ export function remaining(s) {
   });
   return { gems, red };
 }
+
+export { OPPOSITE };

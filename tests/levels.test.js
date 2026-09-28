@@ -22,10 +22,12 @@ for (const level of LEVELS) {
 
   test(`${level.id}: initial map is at rest`, () => {
     const s = createState(level, { tools: toolsBefore(level.id) });
-    const before = s.obj.map((o) => (o ? o.id : 0)).join();
+    // Objects riding conveyor belts are allowed to move.
+    const still = (st) => st.obj.map((o, i) => (o && st.floor[i] !== 'conv' ? `${o.id}@${i}` : '')).filter(Boolean);
+    const before = still(s);
     playMoves(s, '..', { strict: false });
     const moved = s.events.filter((e) => e.type === 'wobble');
-    assert.equal(s.obj.map((o) => (o ? o.id : 0)).join(), before, `objects moved at start\n${toAscii(s)}`);
+    for (const k of before) assert.ok(still(s).includes(k), `object ${k} moved at start\n${toAscii(s)}`);
     assert.equal(moved.length, 0);
   });
 

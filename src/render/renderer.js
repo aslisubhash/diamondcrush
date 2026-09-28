@@ -2,9 +2,16 @@
 // every animation frame and slides entities between their previous and
 // current cells, so the game plays like a grid game but looks fluid.
 import * as S from './sprites.js';
+import * as S2 from './sprites2.js';
 import { PALETTES, COLORS } from './palette.js';
 import { KEY_SHAPES } from '../engine/constants.js';
-import { gateOpen, exitOpen, spikePhase, predictFalls } from '../engine/sim.js';
+import { gateOpen, exitOpen, spikePhase, predictFalls, wellWet, lampDir, convDir } from '../engine/sim.js';
+
+// Solid tiles that should show a wall front face above open floor.
+const SOLIDISH = new Set(['wall', 'false', 'cracked', 'void', 'door', 'lever', 'exit', 'brazier', 'jet', 'lamp', 'sensor', 'vent']);
+// Tiles redrawn every frame on top of the cached floor.
+const DYNAMIC = new Set(['spikes', 'plate', 'gate', 'door', 'lever', 'idol', 'exit', 'sexit', 'water', 'lair',
+  'conv', 'wind', 'blade', 'brazier', 'jet', 'bridge', 'lamp', 'sensor', 'vent', 'kolam', 'switch', 'well', 'collapse', 'den']);
 
 const SLIDE_MS = 150;
 const RETRO_TILE = 24;
@@ -67,6 +74,7 @@ export class Renderer {
     s.enemies.forEach((e) => m.set(`e${e.id}`, { x: e.x, y: e.y }));
     s.obj.forEach((o, i) => { if (o) m.set(`o${o.id}`, { x: i % s.w, y: Math.floor(i / s.w) }); });
     if (s.boss) m.set('boss', { x: s.boss.x, y: s.boss.y });
+    if (s.partner) m.set('partner', { x: s.partner.x, y: s.partner.y });
     this.prev = m;
   }
 
@@ -168,7 +176,20 @@ export class Renderer {
       case 'steal': this.float(e.x, e.y, '-1', '#ff9a9a'); break;
       case 'gemBack': this.float(e.x, e.y, '+1', COLORS.gemLight); break;
       case 'heal': this.float(e.x, e.y, '+♥', '#ff8aa0'); break;
-      case 'strike': this.doShake(3, now); break;
+      case 'strike': case 'cannon': case 'breath': this.doShake(3, now); break;
+      case 'ignite': this.burst(e.x, e.y, COLORS.flame, 16, 3, 0.07, 600); break;
+      case 'burn': this.burst(e.x, e.y, COLORS.flame, 18, 3, 0.09, 700); this.burst(e.x, e.y, '#3b2716', 10, 2, 0.08, 600); break;
+      case 'freeze': this.burst(e.x, e.y, '#e6f7ff', 12, 2, 0.06, 600); break;
+      case 'melt': case 'splash': this.burst(e.x, e.y, '#6fb0dd', 10, 2, 0.06, 500); break;
+      case 'poof': case 'avalanche': this.burst(e.x, e.y, '#ffffff', 10, 2.5, 0.08, 500); break;
+      case 'kolamDone': case 'latch': case 'sensorOn': this.burst(e.x, e.y, '#ffd36b', 16, 3, 0.07, 700); break;
+      case 'collapse': this.burst(e.x, e.y, pal.grout, 12, 2.5, 0.1, 500); this.doShake(2, now); break;
+      case 'jam': this.burst(e.x, e.y, '#b8862e', 18, 3.5, 0.09, 700); this.doShake(5, now); break;
+      case 'bossBump': this.doShake(6, now); this.burst(e.x, e.y, '#ffd36b', 10, 3, 0.07, 600); break;
+      case 'fallPit': this.burst(e.x, e.y, '#ffffff', 10, 2, 0.08, 500); break;
+      case 'disc': this.disc = { path: this.state.disc || [], until: now + 350 }; break;
+      case 'bell': this.flash = { color: 'rgba(160,220,255,0.18)', until: now + 250 }; break;
+      case 'swap': this.burst(e.x, e.y, '#ffffff', 10, 2, 0.06, 500); break;
       default:
     }
   }
@@ -186,8 +207,7 @@ export class Renderer {
     g.fillRect(0, 0, c.width, c.height);
     const solid = (x, y) => {
       if (x < 0 || y < 0 || x >= s.w || y >= s.h) return true;
-      const f = s.floor[y * s.w + x];
-      return f === 'wall' || f === 'false' || f === 'cracked' || f === 'void' || f === 'door' || f === 'lever' || f === 'exit';
+      return SOLIDISH.has(s.floor[y * s.w + x]);
     };
     for (let y = 0; y < s.h; y++) {
       for (let x = 0; x < s.w; x++) {
@@ -203,6 +223,10 @@ export class Renderer {
           S.drawFilled(g, T, x, y, pal);
         } else if (f === 'pit') {
           S.drawPit(g, T, pal);
+        } else if (f === 'ice') {
+          S2.drawIce(g, T, x, y);
+        } else if (f === 'grass') {
+          S2.drawGrass(g, T, x, y);
         } else {
           S.drawFloor(g, T, x, y, pal);
         }
@@ -327,12 +351,28 @@ export class Renderer {
         const m = s.meta[i];
         const px = x * T;
         const py = y * T;
-        if (f === 'spikes' || f === 'plate' || f === 'gate' || f === 'door' || f === 'lever' || f === 'idol' ||
-            f === 'exit' || f === 'sexit' || f === 'water' || f === 'lair') {
+        if (DYNAMIC.has(f)) {
           ctx.save();
           ctx.translate(px, py);
           if (f === 'spikes') S.drawSpikes(ctx, T, spikePhase(s, i));
+          else if (f === 'plate' && m && m.gear) S2.drawGear(ctx, T, tsec);
           else if (f === 'plate') S.drawPlate(ctx, T, m && m.down);
+          else if (f === 'conv') S2.drawConveyor(ctx, T, convDir(s, i), tsec);
+          else if (f === 'wind') S2.drawWind(ctx, T, m.dir, tsec, pal);
+          else if (f === 'blade') S2.drawBlade(ctx, T, spikePhase(s, i), tsec);
+          else if (f === 'brazier') S2.drawBrazier(ctx, T, m.lit, tsec, pal);
+          else if (f === 'jet') S2.drawJet(ctx, T, m.dir, spikePhase(s, i), pal);
+          else if (f === 'bridge') S2.drawBridge(ctx, T, gateOpen(s, i), pal, tsec);
+          else if (f === 'lamp') S2.drawLamp(ctx, T, lampDir(s, i), pal, m.laser);
+          else if (f === 'sensor') S2.drawSensor(ctx, T, m.hit, pal, tsec);
+          else if (f === 'vent') S2.drawVent(ctx, T, spikePhase(s, i), pal);
+          else if (f === 'kolam') S2.drawKolam(ctx, T, m.traced || s.kolamDone[m.ch]);
+          else if (f === 'switch') S2.drawSwitch(ctx, T, m.on);
+          else if (f === 'well') S2.drawWell(ctx, T, wellWet(s, i), pal, tsec);
+          else if (f === 'collapse') {
+            if (m.down) S.drawPit(ctx, T, pal);
+            else S2.drawCollapse(ctx, T, m.warn, tsec);
+          } else if (f === 'den') S2.drawDen(ctx, T, tsec);
           else if (f === 'gate') S.drawGate(ctx, T, gateOpen(s, i));
           else if (f === 'door') S.drawDoor(ctx, T, m.color, KEY_SHAPES[m.color], pal);
           else if (f === 'lever') S.drawLever(ctx, T, m.on, pal);
@@ -350,9 +390,60 @@ export class Renderer {
       }
     }
 
+    // Fire, venom, light beams and the chakra disc's flight.
+    for (const i of s.fire || []) {
+      ctx.save();
+      ctx.translate((i % s.w) * T, Math.floor(i / s.w) * T);
+      S2.drawFire(ctx, T, tsec, i);
+      ctx.restore();
+    }
+    for (const i of s.venom || []) {
+      ctx.save();
+      ctx.translate((i % s.w) * T, Math.floor(i / s.w) * T);
+      S2.drawVenom(ctx, T, tsec);
+      ctx.restore();
+    }
+    for (const beam of s.beams || []) {
+      for (const i of beam.cells) {
+        ctx.save();
+        ctx.translate((i % s.w) * T, Math.floor(i / s.w) * T);
+        S2.drawBeamCell(ctx, T, beam.laser, tsec);
+        ctx.restore();
+      }
+    }
+    if (this.disc && now < this.disc.until) {
+      const a = (this.disc.until - now) / 350;
+      ctx.fillStyle = `rgba(224,180,60,${a})`;
+      for (const i of this.disc.path) {
+        ctx.beginPath();
+        ctx.arc((i % s.w + 0.5) * T, (Math.floor(i / s.w) + 0.5) * T, T * 0.18, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
     // Boss telegraphs.
     const b = s.boss;
     if (b && b.alive) {
+      const a = 0.22 + Math.sin(tsec * 18) * 0.13;
+      if (b.wind) {
+        ctx.fillStyle = `rgba(255,70,40,${a})`;
+        const [dx, dy] = { U: [0, -1], D: [0, 1], L: [-1, 0], R: [1, 0] }[b.wind.dir];
+        for (let k = 1; k < 12; k++) {
+          const xx = b.x + dx * k;
+          const yy = b.y + dy * k;
+          if (xx < 0 || yy < 0 || xx >= s.w || yy >= s.h || SOLIDISH.has(s.floor[yy * s.w + xx])) break;
+          ctx.fillRect(xx * T, yy * T, T, T);
+        }
+      }
+      if (b.breath) {
+        ctx.fillStyle = `rgba(150,220,255,${a + 0.1})`;
+        ctx.fillRect(0, b.breath.y * T, b.x * T, T);
+      }
+      if (b.cannon) {
+        ctx.fillStyle = `rgba(255,120,40,${a})`;
+        if (b.cannon.row !== null) ctx.fillRect(0, b.cannon.row * T, s.w * T, T);
+        if (b.cannon.col !== null) ctx.fillRect(b.cannon.col * T, 0, T, s.h * T);
+      }
       if (b.strike) {
         const a = 0.25 + Math.sin(tsec * 18) * 0.15;
         ctx.fillStyle = `rgba(255,90,40,${a})`;
@@ -402,16 +493,41 @@ export class Renderer {
       draws.push({ y: p.y, fn: () => this.drawEnemy(ctx, T, e, p, tsec) });
     }
     if (b && b.alive) {
-      for (const seg of b.trail.slice(0, 3)) {
-        draws.push({ y: seg.y - 0.01, fn: () => { ctx.save(); ctx.translate(seg.x * T, seg.y * T); S.drawNagaBody(ctx, T); ctx.restore(); } });
+      if (b.t === 'naga') {
+        for (const seg of b.trail.slice(0, 3)) {
+          draws.push({ y: seg.y - 0.01, fn: () => { ctx.save(); ctx.translate(seg.x * T, seg.y * T); S.drawNagaBody(ctx, T); ctx.restore(); } });
+        }
       }
       const p = this.lerpPos('boss', b.x, b.y, now);
+      const hurt = now < this.bossHurtUntil;
       draws.push({
         y: p.y + 0.5,
         fn: () => {
           ctx.save();
-          ctx.translate(p.x * T, (p.y - 0.25) * T);
-          S.drawNaga(ctx, T * 1.1, tsec, now < this.bossHurtUntil, !!b.strike);
+          if (b.t === 'naga') {
+            ctx.translate(p.x * T, (p.y - 0.25) * T);
+            S.drawNaga(ctx, T * 1.1, tsec, hurt, !!b.strike);
+          } else {
+            const big = T * 1.2;
+            ctx.translate(p.x * T - (big - T) / 2, p.y * T - (big - T));
+            if (b.t === 'baron') S2.drawBaron(ctx, big, b.dir, tsec, hurt, b.stun > 0, !!b.wind || !!b.charge);
+            else if (b.t === 'frost') S2.drawFrostfang(ctx, big, tsec, hurt, !!b.breath);
+            else if (b.t === 'rakta') S2.drawRakta(ctx, big, tsec, hurt, !!b.cannon);
+            else if (b.t === 'hand') S2.drawHandLeader(ctx, big, b.dir, tsec, hurt, Math.floor(tsec * 4) % 2);
+          }
+          ctx.restore();
+        },
+      });
+    }
+    if (s.partner) {
+      const pp = this.lerpPos('partner', s.partner.x, s.partner.y, now);
+      draws.push({
+        y: pp.y,
+        fn: () => {
+          ctx.save();
+          ctx.translate(pp.x * T, pp.y * T);
+          ctx.globalAlpha = 0.85;
+          S2.drawExplorer(ctx, T, s.partner.who, s.partner.dir, 0, {});
           ctx.restore();
         },
       });
@@ -428,9 +544,14 @@ export class Renderer {
     if (now < this.compass) this.drawCompass(ctx, T, hp, now);
 
     // Darkness for dark rooms (torch radius).
-    if (this.level.dark && now > this.lightsOutAt - 1200) {
+    if (s.dark && !this.level.dark) {
+      if (!this.darkSince) this.darkSince = now;
+      this.drawDark(ctx, T, hp, Math.min(1, (now - this.darkSince) / 800), camX, camY);
+    } else if (this.level.dark && s.dark && now > this.lightsOutAt - 1200) {
       const fade = Math.min(1, (now - (this.lightsOutAt - 1200)) / 1200);
       this.drawDark(ctx, T, hp, fade, camX, camY);
+    } else {
+      this.darkSince = 0;
     }
     ctx.restore();
   }
@@ -454,7 +575,16 @@ export class Renderer {
         S.drawBoulder(ctx, T, true);
         break;
       }
-      case 'crate': S.drawCrate(ctx, T); break;
+      case 'crate':
+        S.drawCrate(ctx, T);
+        if (o.burn) {
+          ctx.fillStyle = `rgba(40,20,5,${o.burn * 0.2})`;
+          ctx.fillRect(T * 0.15, T * 0.17, T * 0.7, T * 0.68);
+        }
+        break;
+      case 'mirror': S2.drawMirror(ctx, T, o.o); break;
+      case 'heart': S2.drawHeartStone(ctx, T, tsec); break;
+      case 'snow': S2.drawSnow(ctx, T); break;
       case 'gem': S.drawGem(ctx, T, false, tsec + p.x * 0.7 + p.y * 1.3); break;
       case 'red': {
         const g = ctx.createRadialGradient(T / 2, T / 2, 0, T / 2, T / 2, T * 0.6);
@@ -474,7 +604,8 @@ export class Renderer {
         ctx.arc(T / 2, T / 2, T * 0.45, 0, Math.PI * 2);
         ctx.fill();
         if (o.tool === 'grapple') S.drawGrapple(ctx, T);
-        else S.drawHammer(ctx, T);
+        else if (o.tool === 'hammer') S.drawHammer(ctx, T);
+        else S2.drawToolSprite(ctx, T, o.tool);
         break;
       }
       case 'fruit': S.drawFruit(ctx, T); break;
@@ -490,6 +621,23 @@ export class Renderer {
     if (e.t === 'snake') S.drawSnake(ctx, T, e.dir, frame);
     else if (e.t === 'scarab') S.drawScarab(ctx, T, frame);
     else if (e.t === 'monkey') S.drawMonkey(ctx, T, frame, e.carrying, e.calm);
+    else if (e.t === 'bat') S2.drawBat(ctx, T, frame);
+    else if (e.t === 'knight') S2.drawKnight(ctx, T, e.dir, frame, !!e.charge);
+    else if (e.t === 'rat') S2.drawRat(ctx, T, e.dir, frame);
+    else if (e.t === 'yeti') S2.drawYeti(ctx, T, frame, !!e.slide);
+    else if (e.t === 'spirit') S2.drawSpirit(ctx, T, tsec);
+    else if (e.t === 'cobra') S2.drawCobra(ctx, T, e.dir, e.warn);
+    else if (e.t === 'langur') S2.drawLangur(ctx, T, frame);
+    else if (e.t === 'thug') S2.drawThug(ctx, T, e.dir, frame);
+    else if (e.t === 'tiger') S2.drawTiger(ctx, T, e.dir, frame, e.hunt);
+    else if (e.t === 'echo') S2.drawEcho(ctx, T, e.dir, frame, this.state.hero.who);
+    const st = this.state;
+    if (st.freezeUntil && st.tick <= st.freezeUntil && e.t !== 'echo') {
+      ctx.fillStyle = 'rgba(150,210,255,0.45)';
+      ctx.beginPath();
+      ctx.arc(T / 2, T / 2, T * 0.42, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -511,7 +659,7 @@ export class Renderer {
       ctx.translate(dx * T * 0.12, dy * T * 0.12);
     }
     const blink = s.hero.invul > 0 && Math.floor(now / 80) % 2 === 0;
-    if (!blink) S.drawHero(ctx, T, s.hero.dir, frame, { hurt: now < this.heroHurtUntil });
+    if (!blink) S2.drawExplorer(ctx, T, s.hero.who, s.hero.dir, frame, { hurt: now < this.heroHurtUntil });
     ctx.restore();
   }
 

@@ -1,4 +1,6 @@
 import { ANGKOR } from './angkor.js';
+import { BAVARIA } from './bavaria.js';
+import { parseLevel } from '../engine/level.js';
 
 export const WORLDS = [
   {
@@ -9,7 +11,14 @@ export const WORLDS = [
     levels: ANGKOR,
     playable: true,
   },
-  { id: 'bavaria', name: 'Falkenstein Keep', place: 'Bavaria', mood: 'Torchlight, levers and patrols.', levels: [], playable: false },
+  {
+    id: 'bavaria',
+    name: 'Falkenstein Keep',
+    place: 'Bavaria',
+    mood: 'Cold stone, torchlight, banners and dungeons.',
+    levels: BAVARIA,
+    playable: true,
+  },
   { id: 'tibet', name: 'Monastery of Nine Winds', place: 'Tibet', mood: 'Ice sliding and light beams.', levels: [], playable: false },
   { id: 'india', name: 'Bharat Expedition', place: 'India', mood: 'Stepwells, forts and monsoon channels.', levels: [], playable: false },
   { id: 'vault', name: 'The Obsidian Vault', place: 'Finale', mood: 'Every tool, every world.', levels: [], playable: false },
@@ -22,12 +31,12 @@ export function getLevel(id) {
 }
 
 // Tools a player normally owns when starting a level in order: every tool
-// picked up (map char 'h') or awarded (`reward`) by an earlier level.
+// picked up or awarded (`reward`) by an earlier level in the campaign.
 export function toolsBefore(id) {
   const out = [];
   for (const l of LEVELS) {
     if (l.id === id) break;
-    if (l.map.some((row) => row.includes('h'))) out.push('hammer');
+    for (const o of parseLevel(l).obj) if (o && o.t === 'tool') out.push(o.tool);
     if (l.reward) out.push(l.reward);
   }
   return [...new Set(out)];

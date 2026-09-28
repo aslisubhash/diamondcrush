@@ -1,6 +1,7 @@
 // Title screen backdrop and story-comic panel art, drawn with the game's
 // own sprite functions.
 import * as S from '../render/sprites.js';
+import { drawToolSprite } from '../render/sprites2.js';
 import { PALETTES, COLORS } from '../render/palette.js';
 
 const pal = PALETTES.angkor;
@@ -185,4 +186,5 @@ export function drawToolIcon(canvas, tool) {
   const s = Math.min(canvas.width, canvas.height);
   if (tool === 'hammer') S.drawHammer(ctx, s);
   else if (tool === 'grapple') S.drawGrapple(ctx, s);
+  else if (tool) drawToolSprite(ctx, s, tool);
 }

@@ -137,6 +137,16 @@ export function drawWall(ctx, s, x, y, pal, front, cracked) {
       ctx.fillRect(mx + s * 0.22, s - fh, s * 0.04, fh * 0.45);
     }
   }
+  // Hanging banners and prayer flags on wall faces.
+  if (front && pal.banner && hash(x, y, 13) > 0.78) {
+    const bx = s * 0.3;
+    ctx.fillStyle = pal.bannerTrim;
+    ctx.fillRect(bx - s * 0.03, s - fh - s * 0.02, s * 0.46, s * 0.04);
+    ctx.fillStyle = pal.banner;
+    poly(ctx, [bx, s - fh, bx + s * 0.4, s - fh, bx + s * 0.4, s - s * 0.08, bx + s * 0.2, s - s * 0.16, bx, s - s * 0.08]);
+    ctx.fillStyle = pal.bannerTrim;
+    circle(ctx, bx + s * 0.2, s - fh + s * 0.12, s * 0.05);
+  }
   if (cracked) {
     ctx.strokeStyle = '#2a2112';
     ctx.lineWidth = Math.max(1, s / 14);
