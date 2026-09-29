@@ -469,6 +469,8 @@ button { font: inherit; color: inherit; }
   white-space: nowrap;
 }
 .autoplay-badge.show { display: flex; }
+/* Keep tips clear of the spirit-guide badge. */
+#game-window:has(.autoplay-badge.show) .tip { bottom: 64px; }
 
 /* ---------- control deck ---------- */
 .deck {
@@ -634,7 +636,7 @@ button { font: inherit; color: inherit; }
 .gesture-hint {
   position: absolute;
   left: 50%;
-  bottom: 18px;
+  top: 64px;
   transform: translateX(-50%);
   padding: 8px 16px;
   border-radius: 999px;
